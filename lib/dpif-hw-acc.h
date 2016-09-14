@@ -14,6 +14,7 @@ struct dpif_hw_acc {
     struct hmap port_to_netdev;
     struct hmap ufid_to_handle;
     struct hmap handle_to_ufid;
+    struct hmap ufid_to_policy;
 };
 
 struct port_netdev_hash_data {
@@ -32,4 +33,9 @@ struct ufid_handle_hash_data {
     odp_port_t port;
 };
 
+struct ufid_policy_hash_data {
+    struct hmap_node node_ufid;
+    ovs_u128 ovs_ufid;
+    int offloading_policy;
+};
 #endif

@@ -42,6 +42,8 @@
 #include "openvswitch/vlog.h"
 #include "netdev-provider.h"
 #include "dpif-hw-acc.h"
+#include "tc.h"
+#include "hw-offload-policy.h"
 
 VLOG_DEFINE_THIS_MODULE(dpif_hw_acc);
 
@@ -323,6 +325,46 @@ get_ovs_port(struct dpif_hw_acc *dpif, int ifindex)
     return -1;
 }
 
+static void
+del_policy(struct dpif_hw_acc *dpif, const ovs_u128 * ovs_ufid)
+{
+    struct ufid_policy_hash_data *data;
+
+    if (!ovs_ufid) {
+        return;
+    }
+    size_t hash = hash_ufid(ovs_ufid);
+
+    /* WRITE LOCK */
+    HMAP_FOR_EACH_WITH_HASH(data, node_ufid, hash, &dpif->ufid_to_policy) {
+        if (memcmp(&data->ovs_ufid, ovs_ufid, sizeof (*ovs_ufid)) == 0)
+            break;
+    }
+    if (data) {
+        hmap_remove(&dpif->ufid_to_policy, &data->node_ufid);
+        free(data);
+    }
+    /* WRITE UNLOACK */
+}
+
+static void
+put_policy(struct dpif_hw_acc *dpif, const ovs_u128 * ovs_ufid,
+           enum dpif_hw_offload_policy policy)
+{
+    struct ufid_policy_hash_data *data =
+        malloc(sizeof (struct ufid_policy_hash_data));
+
+    data->ovs_ufid = *ovs_ufid;
+    data->offloading_policy = policy;
+
+    del_policy(dpif, ovs_ufid);
+    /* WRITE LOCK */
+    hmap_insert(&dpif->ufid_to_policy, &data->node_ufid, hash_ufid(ovs_ufid));
+    /* WRITE UNLOCK */
+    return;
+
+}
+
 static struct dpif_hw_acc *
 dpif_hw_acc_cast(const struct dpif *dpif)
 {
@@ -336,6 +378,7 @@ initmaps(struct dpif_hw_acc *dpif)
     hmap_init(&dpif->port_to_netdev);
     hmap_init(&dpif->ufid_to_handle);
     hmap_init(&dpif->handle_to_ufid);
+    hmap_init(&dpif->ufid_to_policy);
     ovs_mutex_init(&dpif->hash_mutex);
     return 0;
 }
