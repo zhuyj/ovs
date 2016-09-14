@@ -15,6 +15,8 @@ struct dpif_hw_acc {
     struct hmap ufid_to_handle;
     struct hmap handle_to_ufid;
     struct hmap ufid_to_policy;
+    uint64_t n_last_hits;
+    uint64_t n_last_flows;
 };
 
 struct port_netdev_hash_data {
