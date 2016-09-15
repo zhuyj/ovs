@@ -341,6 +341,8 @@ if LINUX
 lib_libopenvswitch_la_SOURCES += \
 	lib/dpif-netlink.c \
 	lib/dpif-netlink.h \
+	lib/tc.h \
+	lib/tc.c \
 	lib/dpif-hw-acc.c \
 	lib/dpif-hw-acc.h \
 	lib/if-notifier.c \
