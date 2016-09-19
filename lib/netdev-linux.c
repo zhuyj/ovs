@@ -419,6 +419,7 @@ static const struct tc_ops tc_ops_codel;
 static const struct tc_ops tc_ops_fqcodel;
 static const struct tc_ops tc_ops_sfq;
 static const struct tc_ops tc_ops_default;
+static const struct tc_ops tc_ops_ingress;
 static const struct tc_ops tc_ops_other;
 
 static const struct tc_ops *const tcs[] = {
@@ -428,6 +429,7 @@ static const struct tc_ops *const tcs[] = {
     &tc_ops_fqcodel,            /* Fair queue controlled delay */
     &tc_ops_sfq,                /* Stochastic fair queueing */
     &tc_ops_default,            /* Default qdisc (see tc-pfifo_fast(8)). */
+    &tc_ops_ingress,            /* Ingress. */
     &tc_ops_other,              /* Some other qdisc. */
     NULL
 };
@@ -4568,6 +4570,76 @@ static const struct tc_ops tc_ops_hfsc = {
     hfsc_class_delete,          /* class_delete */
     hfsc_class_get_stats,       /* class_get_stats */
     hfsc_class_dump_stats       /* class_dump_stats */
+};
+
+/* ingress traffic control class. */
+
+struct ingress {
+    struct tc tc;
+};
+
+static void
+ingress_install__(struct netdev *netdev_)
+{
+    struct netdev_linux *netdev = netdev_linux_cast(netdev_);
+    struct ingress *ingress;
+
+    ingress = xmalloc(sizeof *ingress);
+    tc_init(&ingress->tc, &tc_ops_ingress);
+
+    netdev->tc = &ingress->tc;
+}
+
+static void
+ingress_parse_qdisc_details__(struct netdev *netdev OVS_UNUSED,
+                              const struct smap *details OVS_UNUSED, 
+                              struct ingress *ingress OVS_UNUSED)
+{
+	/* parse details  */
+}
+
+static int
+ingress_tc_install(struct netdev *netdev, const struct smap *details OVS_UNUSED)
+{
+    int error;
+    struct ingress ingress;
+
+    ingress_parse_qdisc_details__(netdev, details, &ingress);
+    error = tc_add_del_ingress_qdisc(netdev, true);
+    if (!error) {
+        ingress_install__(netdev);
+    }
+    return error;
+}
+
+static int
+ingress_tc_load(struct netdev *netdev, struct ofpbuf *nlmsg OVS_UNUSED)
+{
+    ingress_install__(netdev);
+    return 0;
+}
+
+static void
+ingress_tc_destroy(struct tc *tc)
+{
+    struct ingress *ingress = CONTAINER_OF(tc, struct ingress, tc);
+    free(ingress);
+}
+
+static const struct tc_ops tc_ops_ingress = {
+    "ingress",                       /* linux_name */
+    "linux-ingress",                 /* ovs_name */
+    0,                               /* n_queues */
+    ingress_tc_install,
+    ingress_tc_load,
+    ingress_tc_destroy,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL
 };
 
 /* "linux-default" traffic control class.
