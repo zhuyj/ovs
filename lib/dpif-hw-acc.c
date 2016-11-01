@@ -145,9 +145,10 @@ hash_port(odp_port_t port)
 }
 
 static inline size_t
-hash_handle_proto_port(int handle, int protocol, odp_port_t port)
+hash_handle_prio_port(int handle, uint16_t prio, odp_port_t port)
 {
-    return hash_int(protocol, hash_int(handle, hash_port(port)));
+    /* TODO: fix utint cast */
+    return hash_int((uint32_t) prio, hash_int(handle, hash_port(port)));
 }
 
 static struct netdev *
@@ -282,10 +283,10 @@ delhandle(struct dpif_hw_acc *dpif, const ovs_u128 * ovs_ufid)
 
 static int
 puthandle(struct dpif_hw_acc *dpif, const ovs_u128 * ovs_ufid,
-          struct netdev *in, odp_port_t port, int handle, int protocol)
+          struct netdev *in, odp_port_t port, int handle, uint16_t prio)
 {
     int ret = 0;
-    size_t hash_to_ufid = hash_handle_proto_port(handle, protocol, port);
+    size_t hash_to_ufid = hash_handle_prio_port(handle, prio, port);
 
     if (!ovs_ufid) {
         VLOG_ERR("%s %d %s (%p) missing UFID!\n", __FILE__, __LINE__, __func__,
@@ -302,34 +303,34 @@ puthandle(struct dpif_hw_acc *dpif, const ovs_u128 * ovs_ufid,
     data->handle = handle;
     data->netdev = in;
     data->port = port;
-    data->protocol = protocol;
+    data->prio = prio;
 
     ovs_mutex_lock(&dpif->hash_mutex);
     hmap_insert(&dpif->ufid_to_handle, &data->node_ufid, hash_ufid(ovs_ufid));
     hmap_insert(&dpif->handle_to_ufid, &data->node_handle, hash_to_ufid);
     VLOG_DBG
-        ("%s %d %s (%p) added mapping %s <-> (handle: %d, protocl: %d, port: %d, indev: %p)\n",
+        ("%s %d %s (%p) added mapping %s <-> (handle: %d, prio: %d, port: %d, indev: %p)\n",
          __FILE__, __LINE__, __func__, dpif, printufid(ovs_ufid), handle,
-         protocol, port, in);
+         prio, port, in);
     ovs_mutex_unlock(&dpif->hash_mutex);
     return ret;
 }
 
 static ovs_u128 *
 findufid(struct dpif_hw_acc *dpif, odp_port_t port, int handle,
-         int protocol)
+         uint16_t prio)
 {
     struct ufid_handle_hash_data *data;
-    size_t hash = hash_handle_proto_port(handle, protocol, port);
+    size_t hash = hash_handle_prio_port(handle, prio, port);
 
     VLOG_DBG
-        ("%s %d %s (%p) finding ufid of (handle: %d,  protocol: %d,  port: %d), hash: %lu\n",
-         __FILE__, __LINE__, __func__, dpif, handle, protocol, port, hash);
+        ("%s %d %s (%p) finding ufid of (handle: %d,  prio: %d,  port: %d), hash: %lu\n",
+         __FILE__, __LINE__, __func__, dpif, handle, prio, port, hash);
 
     ovs_mutex_lock(&dpif->hash_mutex);
     HMAP_FOR_EACH_WITH_HASH(data, node_handle, hash, &dpif->handle_to_ufid) {
         if (data->handle == handle && data->port == port
-            && data->protocol == protocol)
+            && data->prio == prio)
             break;
     }
     ovs_mutex_unlock(&dpif->hash_mutex);
@@ -339,7 +340,7 @@ findufid(struct dpif_hw_acc *dpif, odp_port_t port, int handle,
 
 static int
 gethandle(struct dpif_hw_acc *dpif, const ovs_u128 * ovs_ufid,
-          struct netdev **in, int *protocol, const char *func, int print)
+          struct netdev **in, uint16_t *prio, const char *func, int print)
 {
     struct ufid_handle_hash_data *data;
     int handle = 0;
@@ -366,20 +367,20 @@ gethandle(struct dpif_hw_acc *dpif, const ovs_u128 * ovs_ufid,
     }
     ovs_mutex_unlock(&dpif->hash_mutex);
 
-    if (data && (!data->handle || !data->netdev || !data->protocol)) {
+    if (data && (!data->handle || !data->netdev || !data->prio)) {
         VLOG_ERR
-            ("mising handle/dev/protocl for ufid: %s, handle: %d, netdev: %p, protocol: %d\n",
-             printufid(ovs_ufid), data->handle, data->netdev, data->protocol);
+            ("mising handle/dev/prio for ufid: %s, handle: %d, netdev: %p, prio: %d\n",
+             printufid(ovs_ufid), data->handle, data->netdev, data->prio);
         return 0;
     }
     handle = data ? data->handle : 0;
     if (in)
         *in = data ? data->netdev : 0;
-    if (protocol)
-        *protocol = data ? data->protocol : 0;
+    if (prio)
+        *prio = data ? data->prio : 0;
     if (print && handle)
-        VLOG_DBG("found ufid: %s, handle: %d, protocol: %d, netdev: %p\n",
-                 printufid(ovs_ufid), handle, data->protocol, data->netdev);
+        VLOG_DBG("found ufid: %s, handle: %d, prio: %d, netdev: %p\n",
+                 printufid(ovs_ufid), handle, data->prio, data->netdev);
     return handle;
 }
 
@@ -635,7 +636,7 @@ dpif_hw_tc_flow_to_dpif_flow(struct dpif_hw_acc *dpif,
     dpif_flow->ufid_present = false;
 
     ovs_u128 *ovs_ufid =
-        findufid(dpif, inport, tc_flow->handle, tc_flow->eth_type);
+        findufid(dpif, inport, tc_flow->handle, tc_flow->prio);
     if (ovs_ufid) {
         VLOG_DBG("Found UFID!, handle: %d, ufid: %s\n", tc_flow->handle,
                  printufid(ovs_ufid));
@@ -648,7 +649,7 @@ dpif_hw_tc_flow_to_dpif_flow(struct dpif_hw_acc *dpif,
                        &dpif_flow->ufid);
         dpif_flow->ufid_present = true;
         puthandle(dpif, &dpif_flow->ufid, indev, inport, tc_flow->handle,
-                  tc_flow->eth_type);
+                  tc_flow->prio);
     }
 
     return 0;
@@ -668,6 +669,7 @@ initmaps(struct dpif_hw_acc *dpif)
     hmap_init(&dpif->ufid_to_handle);
     hmap_init(&dpif->handle_to_ufid);
     hmap_init(&dpif->ufid_to_policy);
+    hmap_init(&dpif->mask_to_prio);
     ovs_mutex_init(&dpif->hash_mutex);
     return 0;
 }
@@ -1532,6 +1534,62 @@ parse_to_tc_flow(struct dpif_hw_acc *dpif, struct tc_flow *tc_flow,
 
 }
 
+#define PRIO_ADD_TO_HASH(var) \
+do { \
+    hash_mask = hash_bytes(&var, sizeof(var), hash_mask); \
+    memcpy(&buf[i], &var, sizeof(var)); \
+    i+= sizeof(var); \
+} while (0)
+
+static uint16_t 
+get_new_prio(struct dpif_hw_acc *dpif, struct tc_flow *tc_flow) 
+{
+   struct mask_prio_data *data;
+   size_t hash_mask = 0;
+   char buf[128];
+   size_t i = 0;
+  
+   memset(buf, 0, sizeof(buf));
+
+   PRIO_ADD_TO_HASH(tc_flow->dst_mac_mask);
+   PRIO_ADD_TO_HASH(tc_flow->src_mac_mask);
+
+   PRIO_ADD_TO_HASH(tc_flow->src_port_mask);
+   PRIO_ADD_TO_HASH(tc_flow->dst_port_mask);
+
+   PRIO_ADD_TO_HASH(tc_flow->encap_ipv4.ipv4_src_mask);
+   PRIO_ADD_TO_HASH(tc_flow->encap_ipv4.ipv4_dst_mask);
+
+   PRIO_ADD_TO_HASH(tc_flow->encap_ipv6.ipv6_src_mask);
+   PRIO_ADD_TO_HASH(tc_flow->encap_ipv6.ipv6_dst_mask);
+
+   PRIO_ADD_TO_HASH(tc_flow->ipv4.ipv4_src_mask);
+   PRIO_ADD_TO_HASH(tc_flow->ipv4.ipv4_dst_mask);
+
+   PRIO_ADD_TO_HASH(tc_flow->ipv6.ipv6_src_mask);
+   PRIO_ADD_TO_HASH(tc_flow->ipv6.ipv6_dst_mask);
+
+   PRIO_ADD_TO_HASH(tc_flow->eth_type);
+
+   ovs_mutex_lock(&dpif->hash_mutex);
+   HMAP_FOR_EACH_WITH_HASH(data, node, hash_mask, &dpif->mask_to_prio) {
+       if (data->data && data->len == i &&
+               !memcmp(buf, data->data, data->len)) {
+                ovs_mutex_unlock(&dpif->hash_mutex);
+                return data->prio; 
+        }
+   }
+   
+   struct mask_prio_data *data_mask = malloc(sizeof(struct mask_prio_data)); 
+   memcpy(data_mask->data, buf, i);
+   data_mask->len = i;
+   data_mask->prio = ++dpif->last_prio;
+   hmap_insert(&dpif->mask_to_prio, &data_mask->node, hash_mask);
+   ovs_mutex_unlock(&dpif->hash_mutex);
+
+   return data_mask->prio;
+}
+
 static enum dpif_hw_offload_policy
 parse_flow_put(struct dpif_hw_acc *dpif, struct dpif_flow_put *put)
 {
@@ -1567,14 +1625,14 @@ parse_flow_put(struct dpif_hw_acc *dpif, struct dpif_flow_put *put)
     policy = HW_offload_test_put(dpif, put);
     if (put->ufid)
         put_policy(dpif, put->ufid, policy);
-    int proto = 0;
+    uint16_t getprio = 0;
     int handle =
-        gethandle(dpif, put->ufid, &in, &proto, "DPIF_OP_FLOW_PUT", 1);
-    if (handle && proto && (policy == DPIF_HW_NO_OFFLAOAD)) {
+        gethandle(dpif, put->ufid, &in, &getprio, "DPIF_OP_FLOW_PUT", 1);
+    if (handle && getprio && (policy == DPIF_HW_NO_OFFLAOAD)) {
         put->flags |= DPIF_FP_CREATE;
         int ifindex = netdev_get_ifindex(in);
 
-        tc_del_flower(ifindex, handle, proto);
+        tc_del_flower(ifindex, handle, getprio);
         delhandle(dpif, put->ufid);
         return DPIF_HW_NO_OFFLAOAD;
     }
@@ -1666,7 +1724,9 @@ parse_flow_put(struct dpif_hw_acc *dpif, struct dpif_flow_put *put)
          tc_flow.ip_proto, outport_count);
     if (!cant_offload && tc_flow.ifindex && tc_flow.eth_type
         && outport_count <= 1) {
-        VLOG_DBG("RESULT: %p, ***** offloading (HW_ONLY!)\n", dpif);
+        uint16_t prio = get_new_prio(dpif, &tc_flow);
+
+        VLOG_DBG("RESULT: %p, ***** offloading (HW_ONLY!), prio: %d\n", dpif, prio);
         if (cmd != OVS_FLOW_CMD_NEW && !handle) {
             /* modify and flow is now offloadable, remove from kernel netlink
              * datapath */
@@ -1698,13 +1758,14 @@ parse_flow_put(struct dpif_hw_acc *dpif, struct dpif_flow_put *put)
                          tc_flow.handle, new, tc_flow.ovs_inport,
                          tc_flow.ovs_outport, tc_flow.ifindex,
                          tc_flow.ifindex_out);
-                    int error = tc_replace_flower(&tc_flow);
+        
+                    int error = tc_replace_flower(&tc_flow, prio);
 
                     if (!error) {
                         if (new)
                             puthandle(dpif, put->ufid, tc_flow.indev,
                                       tc_flow.ovs_inport, tc_flow.handle,
-                                      tc_flow.eth_type);
+                                      tc_flow.prio);
 
                         VLOG_DBG(" **** offloaded! handle: %d (%x)\n",
                                  tc_flow.handle, tc_flow.handle);
@@ -1736,12 +1797,12 @@ parse_flow_put(struct dpif_hw_acc *dpif, struct dpif_flow_put *put)
             VLOG_DBG
                 (" ***** handle: %d, new? %d, adding %d -> DROP (ifindex: %d -> DROP)\n",
                  tc_flow.handle, new, tc_flow.ovs_inport, tc_flow.ifindex);
-            error = tc_replace_flower(&tc_flow);
+            error = tc_replace_flower(&tc_flow, prio);
             if (!error) {
                 if (new)
                     puthandle(dpif, put->ufid, tc_flow.indev,
                               tc_flow.ovs_inport, tc_flow.handle,
-                              tc_flow.eth_type);
+                              tc_flow.prio);
 
                 VLOG_DBG(" **** offloaded! handle: %d (%x)\n", tc_flow.handle,
                          tc_flow.handle);
@@ -1764,18 +1825,18 @@ static enum dpif_hw_offload_policy
 parse_flow_get(struct dpif_hw_acc *dpif, struct dpif_flow_get *get)
 {
     struct netdev *in = 0;
-    int protocol = 0;
+    uint16_t prio = 0;
     int handle =
-        gethandle(dpif, get->ufid, &in, &protocol, "DPIF_OP_FLOW_GET", 1);
+        gethandle(dpif, get->ufid, &in, &prio, "DPIF_OP_FLOW_GET", 1);
 
-    if (handle && protocol) {
+    if (handle && prio) {
         struct tc_flow tc_flow;
         int ifindex = netdev_get_ifindex(in);
         int ovs_port = get_ovs_port(dpif, ifindex);
         int error = ENOENT;
 
         if (ovs_port != -1)
-            error = tc_get_flower(ifindex, handle, protocol, &tc_flow);
+            error = tc_get_flower(ifindex, handle, prio, &tc_flow);
 
         if (!error) {
             dpif_hw_tc_flow_to_dpif_flow(dpif, &tc_flow, get->flow, ovs_port,
@@ -1791,20 +1852,20 @@ static enum dpif_hw_offload_policy
 parse_flow_del(struct dpif_hw_acc *dpif, struct dpif_flow_del *del)
 {
     struct netdev *in = 0;
-    int protocol = 0;
+    uint16_t prio = 0;
     int handle =
-        gethandle(dpif, del->ufid, &in, &protocol, "DPIF_OP_FLOW_DEL", 1);
+        gethandle(dpif, del->ufid, &in, &prio, "DPIF_OP_FLOW_DEL", 1);
 
     /* we delete the handle anyway (even if not deleted from tc) */
     delhandle(dpif, del->ufid);
     del_policy(dpif, del->ufid);
 
-    if (handle && protocol) {
+    if (handle && prio) {
         int ifindex = netdev_get_ifindex(in);
 
-        VLOG_DBG("deleting ufid %s, handle %d, protocol: %d, ifindex: %d\n",
-                 printufid(del->ufid), handle, protocol, ifindex);
-        int error = tc_del_flower(ifindex, handle, protocol);
+        VLOG_DBG("deleting ufid %s, handle %d, prio: %d, ifindex: %d\n",
+                 printufid(del->ufid), handle, prio, ifindex);
+        int error = tc_del_flower(ifindex, handle, prio);
 
         if (error)
             VLOG_ERR("DELETE FAILED: tc error: %d\n", error);
@@ -1817,7 +1878,7 @@ parse_flow_del(struct dpif_hw_acc *dpif, struct dpif_flow_del *del)
         return DPIF_HW_OFFLOAD_ONLY;
     }
 
-    VLOG_DBG("del with no handle/ufid/protocol, SW only\n");
+    VLOG_DBG("del with no handle/ufid/prio, SW only\n");
     return DPIF_HW_NO_OFFLAOAD;
 }
 

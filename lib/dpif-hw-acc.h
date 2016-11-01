@@ -15,8 +15,18 @@ struct dpif_hw_acc {
     struct hmap ufid_to_handle;
     struct hmap handle_to_ufid;
     struct hmap ufid_to_policy;
+    struct hmap mask_to_prio;
     uint64_t n_last_hits;
     uint64_t n_last_flows;
+    
+    uint16_t last_prio;
+};
+
+struct mask_prio_data {
+    struct hmap_node node;
+    char data[128];
+    size_t len;
+    uint16_t prio;
 };
 
 struct port_netdev_hash_data {
@@ -30,7 +40,7 @@ struct ufid_handle_hash_data {
     struct hmap_node node_handle;
     ovs_u128 ovs_ufid;
     int handle;
-    int protocol;
+    int prio;
     struct netdev *netdev;
     odp_port_t port;
 };
