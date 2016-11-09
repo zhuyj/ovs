@@ -341,12 +341,6 @@ if LINUX
 lib_libopenvswitch_la_SOURCES += \
 	lib/dpif-netlink.c \
 	lib/dpif-netlink.h \
-	lib/tc.h \
-	lib/tc.c \
-	lib/hw-offload-policy.c \
-	lib/hw-offload-policy.h \
-	lib/dpif-hw-acc.c \
-	lib/dpif-hw-acc.h \
 	lib/if-notifier.c \
 	lib/if-notifier.h \
 	lib/netdev-linux.c \
@@ -364,6 +358,16 @@ lib_libopenvswitch_la_SOURCES += \
 	lib/rtnetlink.h \
 	lib/route-table.c \
 	lib/route-table.h
+endif
+
+if DPIF_TC
+lib_libopenvswitch_la_SOURCES += \
+	lib/tc.h \
+	lib/tc.c \
+	lib/hw-offload-policy.c \
+	lib/hw-offload-policy.h \
+	lib/dpif-hw-acc.c \
+	lib/dpif-hw-acc.h
 endif
 
 if DPDK_NETDEV

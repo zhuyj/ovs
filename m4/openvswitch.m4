@@ -46,6 +46,20 @@ AC_DEFUN([OVS_CHECK_COVERAGE],
      OVS_LDFLAGS="$OVS_LDFLAGS --coverage"
    fi])
 
+dnl Checks for --enable-dpif-tc and defines DPIF_TC if it is specified.
+AC_DEFUN([OVS_CHECK_DPIF_TC],
+  [AC_ARG_ENABLE(
+     [dpif_tc],
+     [AC_HELP_STRING([--enable-dpif-tc],
+                     [Enable tc datapath provider - HW Acceleration])],
+     [case "${enableval}" in
+        (yes) dpif_tc=true ;;
+        (no)  dpif_tc=false ;;
+        (*) AC_MSG_ERROR([bad value ${enableval} for --enable-dpif-tc]) ;;
+      esac],
+     [dpif_tc=false])
+   AM_CONDITIONAL([DPIF_TC], [test x$dpif_tc = xtrue])])
+
 dnl Checks for --enable-ndebug and defines NDEBUG if it is specified.
 AC_DEFUN([OVS_CHECK_NDEBUG],
   [AC_ARG_ENABLE(
