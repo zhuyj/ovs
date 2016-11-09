@@ -42,6 +42,10 @@ AM_CPPFLAGS += -DNDEBUG
 AM_CFLAGS += -fomit-frame-pointer
 endif
 
+if DPIF_TC
+AM_CPPFLAGS += -DDPIF_TC
+endif
+
 if WIN32
 psep=";"
 else
