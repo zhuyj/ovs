@@ -188,7 +188,10 @@ port_del_name(struct dpif_hw_acc *dpif, char *name)
         hmap_remove(&dpif->port_to_netdev, &data->node);
     ovs_mutex_unlock(&dpif->hash_mutex);
 
-    free(data);
+    if (data) {
+         netdev_close(data->netdev);
+         free(data);
+    } 
     return data ? 1 : 0;
 }
 
@@ -207,7 +210,10 @@ port_del(struct dpif_hw_acc *dpif, odp_port_t port)
         hmap_remove(&dpif->port_to_netdev, &data->node);
     ovs_mutex_unlock(&dpif->hash_mutex);
 
-    free(data);
+    if (data) {
+         netdev_close(data->netdev);
+         free(data);
+    } 
     return data ? 1 : 0;
 }
 
@@ -235,7 +241,7 @@ port_add(struct dpif_hw_acc *dpif, odp_port_t port, struct netdev *netdev)
     }
 
     data = malloc(sizeof (struct port_netdev_hash_data));
-    data->netdev = netdev;
+    data->netdev = netdev_ref(netdev);
     data->port = port;
 
     VLOG_DBG
@@ -388,13 +394,17 @@ static int
 get_ovs_port(struct dpif_hw_acc *dpif, int ifindex)
 {
     struct port_netdev_hash_data *data;
+    int ret = -1;
 
+    ovs_mutex_lock(&dpif->hash_mutex);
     HMAP_FOR_EACH(data, node, &dpif->port_to_netdev) {
         if (netdev_get_ifindex(data->netdev) == ifindex) {
-            return data->port;
+            ret =  data->port;
+	    break;
         }
     }
-    return -1;
+    ovs_mutex_unlock(&dpif->hash_mutex);
+    return ret;
 }
 
 static int
@@ -691,6 +701,7 @@ dpif_hw_acc_open(const struct dpif_class *class OVS_UNUSED,
                      __FILE__, __LINE__, __func__, dpif, netdev->name,
                      netdev->netdev_class->type, netdev_get_ifindex(netdev));
                 port_add(dpif, dpif_port.port_no, netdev);
+		netdev_close(netdev);
             }
         }
 
@@ -770,6 +781,7 @@ dpif_hw_acc_port_del(struct dpif *dpif_, odp_port_t port_no)
 {
     int error;
     struct dpif_hw_acc *dpif = dpif_hw_acc_cast(dpif_);
+    VLOG_INFO("%s %d %s, port: %d\n", __FILE__, __LINE__, __func__,  port_no);
 
     error =
         dpif->lp_dpif_netlink->dpif_class->port_del(dpif->lp_dpif_netlink,
@@ -866,6 +878,8 @@ dpif_hw_acc_flow_flush(struct dpif *dpif_)
 
     VLOG_DBG("%s %d %s, (%p) flush start\n", __FILE__, __LINE__, __func__,
              dpif);
+
+    ovs_mutex_lock(&dpif->hash_mutex);
     HMAP_FOR_EACH(data, node, &dpif->port_to_netdev) {
         if (data->netdev) {
             VLOG_DBG("%s %d %s, (%p) flusing port: %d, netdev: %p\n", __FILE__,
@@ -873,6 +887,7 @@ dpif_hw_acc_flow_flush(struct dpif *dpif_)
             tc_flush_flower(netdev_get_ifindex(data->netdev));
         }
     }
+    ovs_mutex_unlock(&dpif->hash_mutex);
 
     VLOG_DBG("%s %d %s, (%p) flush end\n", __FILE__, __LINE__, __func__, dpif);
     return dpif->lp_dpif_netlink->dpif_class->
@@ -906,6 +921,7 @@ dpif_hw_acc_flow_dump_create(const struct dpif *dpif_, bool terse)
     struct nl_dump *flow_dumps = 0;
     int count = 0;
 
+    ovs_mutex_lock(&dpif->hash_mutex);
     int num_ports = hmap_count(&dpif->port_to_netdev);
 
     dump = xzalloc(sizeof *dump);
@@ -928,6 +944,7 @@ dpif_hw_acc_flow_dump_create(const struct dpif *dpif_, bool terse)
             }
         }
     }
+    ovs_mutex_unlock(&dpif->hash_mutex);
 
     dump->netlink_dump =
         dpif->lp_dpif_netlink->dpif_class->
