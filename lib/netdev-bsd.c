@@ -1543,6 +1543,15 @@ netdev_bsd_update_flags(struct netdev *netdev_, enum netdev_flags off,
     netdev_bsd_rxq_recv,                             \
     netdev_bsd_rxq_wait,                             \
     netdev_bsd_rxq_drain,                            \
+                                                     \
+    NULL, /* flow_flush */                           \
+    NULL, /* flow_dump_create */                     \
+    NULL, /* flow_dump_destroy */                    \
+    NULL, /* flow_dump_next */                       \
+    NULL, /* flow_put */                             \
+    NULL, /* flow_get */                             \
+    NULL, /* flow_del */                             \
+    NULL, /* init_flow_api */                        \
 }
 
 const struct netdev_class netdev_bsd_class =
