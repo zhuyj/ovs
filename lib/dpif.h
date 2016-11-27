@@ -400,6 +400,8 @@
 extern "C" {
 #endif
 
+#define DPIF_HMAP_KEY(x) ((x)->dpif_class)
+
 struct dpif;
 struct dpif_class;
 struct dpif_flow;
