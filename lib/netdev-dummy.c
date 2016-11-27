@@ -1384,6 +1384,15 @@ netdev_dummy_update_flags(struct netdev *netdev_,
     netdev_dummy_rxq_recv,                                      \
     netdev_dummy_rxq_wait,                                      \
     netdev_dummy_rxq_drain,                                     \
+                                                                \
+    NULL,                       /* flow_flush */                \
+    NULL,                       /* flow_dump_create */          \
+    NULL,                       /* flow_dump_destroy */         \
+    NULL,                       /* flow_dump_next */            \
+    NULL,                       /* flow_put */                  \
+    NULL,                       /* flow_get */                  \
+    NULL,                       /* flow_del */                  \
+    NULL,                       /* init_flow_api */             \
 }
 
 static const struct netdev_class dummy_class =
