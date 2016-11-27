@@ -2215,6 +2215,50 @@ netdev_hmap_port_del(odp_port_t port_no, const void *obj)
     return ret;
 }
 
+void
+netdev_ports_flow_flush(const void *obj)
+{
+    struct port_to_netdev_data *data;
+
+    HMAP_FOR_EACH(data, node, &port_to_netdev) {
+        if (data->obj == obj) {
+            netdev_flow_flush(data->netdev);
+        }
+    }
+}
+
+struct netdev_flow_dump **
+netdev_ports_flow_dumps_create(const void *obj, int *ports)
+{
+    struct port_to_netdev_data *data;
+    struct netdev_flow_dump **dumps;
+    int count = 0;
+    int i = 0;
+
+    HMAP_FOR_EACH(data, node, &port_to_netdev) {
+        if (data->obj == obj) {
+            count++;
+        }
+    }
+
+    dumps = count ? xzalloc(sizeof(dumps[0]) * count) : NULL;
+
+    HMAP_FOR_EACH(data, node, &port_to_netdev) {
+        if (data->obj == obj) {
+            int err = netdev_flow_dump_create(data->netdev, &dumps[i]);
+            if (err) {
+                continue;
+            }
+
+            dumps[i]->port = data->dpif_port.port_no;
+            i++;
+        }
+    }
+
+    *ports = i;
+    return dumps;
+}
+
 bool netdev_flow_api_enabled = false;
 
 void
