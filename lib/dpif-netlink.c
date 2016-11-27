@@ -1054,10 +1054,21 @@ dpif_netlink_flow_flush(struct dpif *dpif_)
 {
     const struct dpif_netlink *dpif = dpif_netlink_cast(dpif_);
     struct dpif_netlink_flow flow;
+    struct ovs_list port_list;
+    struct netdev_list_element *element;
 
     dpif_netlink_flow_init(&flow);
     flow.cmd = OVS_FLOW_CMD_DEL;
     flow.dp_ifindex = dpif->dp_ifindex;
+
+    if (netdev_flow_api_enabled) {
+        netdev_hmap_port_get_list(dpif_->dpif_class, &port_list);
+        LIST_FOR_EACH(element, node, &port_list) {
+            netdev_flow_flush(element->netdev);
+        }
+        netdev_port_list_del(&port_list);
+    }
+
     return dpif_netlink_flow_transact(&flow, NULL, NULL);
 }
 
