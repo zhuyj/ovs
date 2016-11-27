@@ -2080,6 +2080,139 @@ netdev_init_flow_api(struct netdev *netdev)
             : EOPNOTSUPP);
 }
 
+static struct hmap port_to_netdev = HMAP_INITIALIZER(&port_to_netdev);
+static struct hmap ifindex_to_port = HMAP_INITIALIZER(&ifindex_to_port);
+
+struct port_to_netdev_data {
+    struct hmap_node node;
+    struct netdev *netdev;
+    struct dpif_port dpif_port;
+    const void *obj;
+};
+
+struct ifindex_to_port_data {
+    struct hmap_node node;
+    int ifindex;
+    odp_port_t port;
+};
+
+int
+netdev_hmap_port_add(struct netdev *netdev, const void *obj,
+                     struct dpif_port *dpif_port)
+{
+    size_t hash = hash_int(dpif_port->port_no, hash_pointer(obj, 0));
+    struct port_to_netdev_data *data = malloc(sizeof *data);
+    struct ifindex_to_port_data *ifidx = malloc(sizeof *ifidx);
+
+    netdev_hmap_port_del(dpif_port->port_no, obj);
+
+    data->netdev = netdev_ref(netdev);
+    data->obj = obj;
+    dpif_port_clone(&data->dpif_port, dpif_port);
+
+    ifidx->ifindex = netdev_get_ifindex(netdev);
+    ifidx->port = dpif_port->port_no;
+
+    hmap_insert(&port_to_netdev, &data->node, hash);
+    hmap_insert(&ifindex_to_port, &ifidx->node, ifidx->ifindex);
+
+    return 0;
+}
+
+struct netdev *
+netdev_hmap_port_get(odp_port_t port_no, const void *obj)
+{
+    size_t hash = hash_int(port_no, hash_pointer(obj, 0));
+    struct port_to_netdev_data *data;
+
+    HMAP_FOR_EACH_WITH_HASH(data, node, hash, &port_to_netdev) {
+            if (data->obj == obj && data->dpif_port.port_no == port_no) {
+                break;
+            }
+    }
+
+    if (data) {
+        netdev_ref(data->netdev);
+        return data->netdev;
+    }
+
+    return 0;
+}
+
+odp_port_t
+netdev_hmap_port_get_byifidx(int ifindex)
+{
+    struct ifindex_to_port_data *data;
+
+    HMAP_FOR_EACH_WITH_HASH(data, node, ifindex, &ifindex_to_port) {
+            if (data->ifindex == ifindex) {
+                return data->port;
+            }
+    }
+
+    return 0;
+}
+
+int
+netdev_hmap_port_del(odp_port_t port_no, const void *obj)
+{
+    size_t hash = hash_int(port_no, hash_pointer(obj, 0));
+    struct port_to_netdev_data *data;
+
+    HMAP_FOR_EACH_WITH_HASH(data, node, hash, &port_to_netdev) {
+            if (data->obj == obj && data->dpif_port.port_no == port_no) {
+                break;
+            }
+    }
+
+    if (data) {
+        dpif_port_destroy(&data->dpif_port);
+        netdev_close(data->netdev); /* unref and possibly close */
+        hmap_remove(&port_to_netdev, &data->node);
+        free(data);
+        return 0;
+    }
+
+    return ENOENT;
+}
+
+int
+netdev_hmap_port_get_list(const void *obj, struct ovs_list *list)
+{
+    struct port_to_netdev_data *data;
+    int count = 0;
+
+    ovs_list_init(list);
+
+    HMAP_FOR_EACH(data, node, &port_to_netdev) {
+            if (data->obj == obj) {
+                struct netdev_list_element *element = malloc(sizeof *element);
+
+                element->netdev = netdev_ref(data->netdev);
+                element->port_no = data->dpif_port.port_no;
+                ovs_list_insert(list, &element->node);
+                count++;
+            }
+    }
+
+    return count;
+}
+
+void
+netdev_port_list_del(struct ovs_list *list)
+{
+    struct netdev_list_element *element;
+
+    if (!list) {
+        return;
+    }
+
+    LIST_FOR_EACH_POP(element, node, list) {
+        netdev_close(element->netdev);
+        free(element);
+    }
+}
+
 bool netdev_flow_api_enabled = false;
 
 void
