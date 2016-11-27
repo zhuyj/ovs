@@ -1973,3 +1973,105 @@ netdev_reconfigure(struct netdev *netdev)
             ? class->reconfigure(netdev)
             : EOPNOTSUPP);
 }
+
+int
+netdev_flow_flush(struct netdev *netdev)
+{
+    const struct netdev_class *class = netdev->netdev_class;
+
+    return (class->flow_flush
+            ? class->flow_flush(netdev)
+            : EOPNOTSUPP);
+}
+
+struct netdev_flow_dump *
+netdev_flow_dump_create(struct netdev *netdev)
+{
+    const struct netdev_class *class = netdev->netdev_class;
+    struct netdev_flow_dump *dump;
+
+    if (class->flow_dump_create) {
+        return class->flow_dump_create(netdev);
+    }
+
+    dump = malloc(sizeof *dump);
+    dump->netdev = netdev;
+
+    return dump;
+}
+
+int
+netdev_flow_dump_destroy(struct netdev_flow_dump *dump)
+{
+    const struct netdev_class *class = dump->netdev->netdev_class;
+
+    if (class->flow_dump_destroy) {
+        return class->flow_dump_destroy(dump);
+    }
+
+    free(dump);
+
+    return EOPNOTSUPP;
+}
+
+bool
+netdev_flow_dump_next(struct netdev_flow_dump *dump,
+                      struct match *match,
+                      struct nlattr **actions,
+                      struct dpif_flow_stats *stats,
+                      ovs_u128 *ufid,
+                      struct ofpbuf *rbuffer,
+                      struct ofpbuf *wbuffer)
+{
+    const struct netdev_class *class = dump->netdev->netdev_class;
+
+    return (class->flow_dump_next
+            ? class->flow_dump_next(dump, match, actions, stats, ufid,
+                                    rbuffer, wbuffer)
+            : false);
+}
+
+int
+netdev_flow_put(struct netdev *netdev, struct match *match,
+                struct nlattr *actions, size_t act_len,
+                struct dpif_flow_stats *stats, ovs_u128 *ufid)
+{
+    const struct netdev_class *class = netdev->netdev_class;
+
+    return (class->flow_put
+            ? class->flow_put(netdev, match, actions, act_len, stats, ufid)
+            : EOPNOTSUPP);
+}
+
+int
+netdev_flow_get(struct netdev *netdev, struct match *match,
+                struct nlattr **actions, struct dpif_flow_stats *stats,
+                ovs_u128 *ufid, struct ofpbuf *buf)
+{
+    const struct netdev_class *class = netdev->netdev_class;
+
+    return (class->flow_get
+            ? class->flow_get(netdev, match, actions, stats, ufid, buf)
+            : EOPNOTSUPP);
+}
+
+int
+netdev_flow_del(struct netdev *netdev, struct dpif_flow_stats *stats,
+                ovs_u128 *ufid)
+{
+    const struct netdev_class *class = netdev->netdev_class;
+
+    return (class->flow_del
+            ? class->flow_del(netdev, stats, ufid)
+            : EOPNOTSUPP);
+}
+
+int
+netdev_init_flow_api(struct netdev *netdev)
+{
+    const struct netdev_class *class = netdev->netdev_class;
+
+    return (class->init_flow_api
+            ? class->init_flow_api(netdev)
+            : EOPNOTSUPP);
+}

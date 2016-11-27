@@ -115,6 +115,14 @@ struct netdev_rxq {
 
 struct netdev *netdev_rxq_get_netdev(const struct netdev_rxq *);
 
+
+struct netdev_flow_dump {
+    struct netdev *netdev;
+    odp_port_t port;
+    struct nl_dump *nl_dump;
+    bool terse;
+};
+
 /* Network device class structure, to be defined by each implementation of a
  * network device.
  *
@@ -764,6 +772,27 @@ struct netdev_class {
 
     /* Discards all packets waiting to be received from 'rx'. */
     int (*rxq_drain)(struct netdev_rxq *rx);
+
+/* ## -------------------------------- ## */
+/* ## netdev flow offloading functions ## */
+/* ## -------------------------------- ## */
+
+/* If a particular netdev class does not support offloading flows, all these
+ * function pointers must be NULL. */
+
+    int (*flow_flush)(struct netdev *);
+    struct netdev_flow_dump *(*flow_dump_create)(struct netdev *);
+    int (*flow_dump_destroy)(struct netdev_flow_dump *);
+    bool (*flow_dump_next)(struct netdev_flow_dump *, struct match *,
+                           struct nlattr **actions,
+                           struct dpif_flow_stats *stats, ovs_u128 *ufid,
+                           struct ofpbuf *rbuffer, struct ofpbuf *wbuffer);
+    int (*flow_put)(struct netdev *, struct match *, struct nlattr *actions,
+                    size_t actions_len, struct dpif_flow_stats *, ovs_u128 *);
+    int (*flow_get)(struct netdev *, struct match *, struct nlattr **actions,
+                    struct dpif_flow_stats *, ovs_u128 *, struct ofpbuf *);
+    int (*flow_del)(struct netdev *, struct dpif_flow_stats *, ovs_u128 *);
+    int (*init_flow_api)(struct netdev *);
 };
 
 int netdev_register_provider(const struct netdev_class *);
