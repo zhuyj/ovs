@@ -171,6 +171,20 @@ int netdev_init_flow_api(struct netdev *);
 extern bool netdev_flow_api_enabled;
 void netdev_set_flow_api_enabled(bool flow_api_enabled);
 
+/* Netdev dumping. */
+struct netdev_list_element {
+    struct ovs_list node;
+    struct netdev *netdev;
+    odp_port_t port_no;
+};
+struct dpif_port;
+int netdev_hmap_port_add(struct netdev *, const void *obj, struct dpif_port *);
+struct netdev *netdev_hmap_port_get(odp_port_t port, const void *obj);
+int netdev_hmap_port_del(odp_port_t port, const void *obj);
+int netdev_hmap_port_get_list(const void *obj, struct ovs_list *);
+void netdev_port_list_del(struct ovs_list *list);
+odp_port_t netdev_hmap_port_get_byifidx(int ifindex);
+
 /* native tunnel APIs */
 /* Structure to pass parameters required to build a tunnel header. */
 struct netdev_tnl_build_header_params {
