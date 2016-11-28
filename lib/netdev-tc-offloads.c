@@ -76,9 +76,9 @@
 VLOG_DEFINE_THIS_MODULE(netdev_tc_offloads);
 
 int
-netdev_tc_flow_flush(struct netdev *netdev OVS_UNUSED)
+netdev_tc_flow_flush(struct netdev *netdev)
 {
-    return EOPNOTSUPP;
+    return tc_flush_flower(netdev_get_ifindex(netdev));
 }
 
 struct netdev_flow_dump *
