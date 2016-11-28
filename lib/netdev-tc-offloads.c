@@ -76,9 +76,17 @@
 VLOG_DEFINE_THIS_MODULE(netdev_tc_offloads);
 
 int
-netdev_tc_flow_flush(struct netdev *netdev OVS_UNUSED)
+netdev_tc_flow_flush(struct netdev *netdev)
 {
-    return EOPNOTSUPP;
+    int ifindex = netdev_get_ifindex(netdev);
+
+    if (ifindex < 0) {
+        VLOG_ERR_RL(&rl_err, "failed to get ifindex for %s: %s",
+                    netdev_get_name(netdev), ovs_strerror(-ifindex));
+        return -ifindex;
+    }
+
+    return tc_flush(ifindex);
 }
 
 struct netdev_flow_dump *
