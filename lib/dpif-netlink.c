@@ -1908,15 +1908,239 @@ dpif_netlink_operate__(struct dpif_netlink *dpif,
     return n_ops;
 }
 
+static int
+parse_key_and_mask_to_match(const struct nlattr *key, size_t key_len,
+                            const struct nlattr *mask, size_t mask_len,
+                            struct match *match)
+{
+    enum odp_key_fitness fitness;
+
+    fitness = odp_flow_key_to_flow(key, key_len, &match->flow);
+    if (fitness) {
+        /* This should not happen: it indicates that odp_flow_key_from_flow()
+         * and odp_flow_key_to_flow() disagree on the acceptable form of a
+         * flow.  Log the problem as an error, with enough details to enable
+         * debugging. */
+        static struct vlog_rate_limit rl = VLOG_RATE_LIMIT_INIT(1, 5);
+
+        if (!VLOG_DROP_ERR(&rl)) {
+            struct ds s;
+
+            ds_init(&s);
+            odp_flow_format(key, key_len, NULL, 0, NULL, &s, true);
+            VLOG_ERR("internal error parsing flow key %s", ds_cstr(&s));
+            ds_destroy(&s);
+        }
+
+        return EINVAL;
+    }
+
+    fitness = odp_flow_key_to_mask(mask, mask_len, &match->wc, &match->flow);
+    if (fitness) {
+        /* This should not happen: it indicates that
+         * odp_flow_key_from_mask() and odp_flow_key_to_mask()
+         * disagree on the acceptable form of a mask.  Log the problem
+         * as an error, with enough details to enable debugging. */
+        static struct vlog_rate_limit rl = VLOG_RATE_LIMIT_INIT(1, 5);
+
+        if (!VLOG_DROP_ERR(&rl)) {
+            struct ds s;
+
+            VLOG_ERR("internal error parsing flow mask %s (%s)",
+                     ds_cstr(&s), odp_key_fitness_to_string(fitness));
+            ds_destroy(&s);
+        }
+
+        return EINVAL;
+    }
+
+    return 0;
+}
+
+static bool
+parse_flow_put(struct dpif_netlink *dpif, struct dpif_flow_put *put)
+{
+    struct match match;
+    odp_port_t in_port;
+    const struct nlattr *nla;
+    size_t left;
+    int outputs = 0;
+    struct ofpbuf buf;
+    uint64_t act_stub[1024 / 8];
+    size_t offset;
+    struct nlattr *act;
+    struct netdev *dev;
+    int err;
+
+    /* 0x1234 - fake eth type sent to probe feature */
+    if (put->flags & DPIF_FP_PROBE || match.flow.dl_type == htons(0x1234)) {
+        return false;
+    }
+
+    if (parse_key_and_mask_to_match(put->key, put->key_len, put->mask,
+                                put->mask_len, &match)) {
+        return false;
+    }
+
+    in_port = match.flow.in_port.odp_port;
+    ofpbuf_use_stub(&buf, act_stub, sizeof act_stub);
+    offset = nl_msg_start_nested(&buf, OVS_FLOW_ATTR_ACTIONS);
+    NL_ATTR_FOR_EACH(nla, left, put->actions, put->actions_len) {
+        if (nl_attr_type(nla) == OVS_ACTION_ATTR_OUTPUT) {
+            struct netdev *outdev;
+            int ifindex_out;
+            const struct netdev_tunnel_config *tnl_cfg;
+            size_t out_off;
+            odp_port_t out_port;
+
+            outputs++;
+            if (outputs > 1) {
+                break;
+            }
+
+            out_port = nl_attr_get_u32(nla);
+            outdev = netdev_hmap_port_get(out_port, dpif->dpif.dpif_class);
+            tnl_cfg = netdev_get_tunnel_config(outdev);
+
+            out_off = nl_msg_start_nested(&buf, OVS_ACTION_ATTR_OUTPUT);
+            ifindex_out = netdev_get_ifindex(outdev);
+            nl_msg_put_u32(&buf, OVS_ACTION_ATTR_OUTPUT, ifindex_out);
+            if (tnl_cfg && tnl_cfg->dst_port != 0) {
+                nl_msg_put_u32(&buf, OVS_TUNNEL_KEY_ATTR_TP_DST, tnl_cfg->dst_port);
+            }
+            nl_msg_end_nested(&buf, out_off);
+
+            if (outdev) {
+                netdev_close(outdev);
+            }
+        } else {
+            nl_msg_put_unspec(&buf, nl_attr_type(nla), nl_attr_get(nla),
+                              nl_attr_get_size(nla));
+        }
+    }
+    nl_msg_end_nested(&buf, offset);
+
+    if (outputs > 1) {
+        return false;
+    }
+
+    act = ofpbuf_at_assert(&buf, offset, sizeof(struct nlattr));
+    dev = netdev_hmap_port_get(in_port, dpif->dpif.dpif_class);
+    err = netdev_flow_put(dev, &match, CONST_CAST(struct nlattr *,
+                                                  nl_attr_get(act)),
+                          nl_attr_get_size(act), put->stats,
+                          CONST_CAST(ovs_u128 *, put->ufid));
+    netdev_close(dev);
+
+    if (!err) {
+        if (put->flags & DPIF_FP_MODIFY) {
+            struct dpif_op *opp;
+            struct dpif_op op;
+
+            op.type = DPIF_OP_FLOW_DEL;
+            op.u.flow_del.key = put->key;
+            op.u.flow_del.key_len = put->key_len;
+            op.u.flow_del.ufid = put->ufid;
+            op.u.flow_del.pmd_id = put->pmd_id;
+            op.u.flow_del.stats = NULL;
+            op.u.flow_del.terse = false;
+
+            opp = &op;
+            dpif_netlink_operate__(dpif, &opp, 1);
+        }
+        VLOG_DBG("added flow");
+        return true;
+    }
+    VLOG_DBG("failed adding flow: %s", ovs_strerror(err));
+
+    return false;
+}
+
+static void
+dbg_print_flow(const struct nlattr *key, size_t key_len,
+               const struct nlattr *mask, size_t mask_len,
+               const struct nlattr *actions, size_t actions_len,
+               const ovs_u128 *ufid,
+               const char *op)
+{
+        struct ds s;
+
+        ds_init(&s);
+        ds_put_cstr(&s, op);
+        ds_put_cstr(&s, " (");
+        odp_format_ufid(ufid, &s);
+        ds_put_cstr(&s, ")");
+        if (key_len) {
+            ds_put_cstr(&s, "\nflow (verbose): ");
+            odp_flow_format(key, key_len, mask, mask_len, NULL, &s, true);
+            ds_put_cstr(&s, "\nflow: ");
+            odp_flow_format(key, key_len, mask, mask_len, NULL, &s, false);
+        }
+        if (actions_len) {
+            ds_put_cstr(&s, "\nactions: ");
+            format_odp_actions(&s, actions, actions_len);
+        }
+        VLOG_DBG("\n%s", ds_cstr(&s));
+        ds_destroy(&s);
+}
+
+static bool
+try_send_to_netdev(struct dpif_netlink *dpif, struct dpif_op *op)
+{
+    switch (op->type) {
+    case DPIF_OP_FLOW_PUT: {
+        struct dpif_flow_put *put = &op->u.flow_put;
+
+        if (!put->ufid) {
+            return false;
+        }
+        dbg_print_flow(put->key, put->key_len, put->mask, put->mask_len,
+                       put->actions, put->actions_len, put->ufid, "PUT");
+        return parse_flow_put(dpif, put);
+    }
+    case DPIF_OP_FLOW_DEL:
+    case DPIF_OP_FLOW_GET:
+    case DPIF_OP_EXECUTE:
+    default:
+        break;
+    }
+    return false;
+}
+
 static void
 dpif_netlink_operate(struct dpif *dpif_, struct dpif_op **ops, size_t n_ops)
 {
     struct dpif_netlink *dpif = dpif_netlink_cast(dpif_);
+    struct dpif_op **new_ops;
+    int n_new_ops = 0;
+    int i = 0;
 
-    while (n_ops > 0) {
-        size_t chunk = dpif_netlink_operate__(dpif, ops, n_ops);
-        ops += chunk;
-        n_ops -= chunk;
+    if (!netdev_flow_api_enabled) {
+        new_ops = ops;
+        n_new_ops = n_ops;
+    } else {
+        new_ops = xmalloc((sizeof *new_ops) * n_ops);
+        n_new_ops = 0;
+
+        for (i = 0; i < n_ops; i++) {
+            if (try_send_to_netdev(dpif, ops[i])) {
+                ops[i]->error = 0;
+            } else {
+                new_ops[n_new_ops++] = ops[i];
+            }
+        }
+        ops = new_ops;
+    }
+
+    while (n_new_ops > 0) {
+        size_t chunk = dpif_netlink_operate__(dpif, new_ops, n_new_ops);
+
+        new_ops += chunk;
+        n_new_ops -= chunk;
+    }
+
+    if (netdev_flow_api_enabled) {
+       free(ops);
     }
 }
 
