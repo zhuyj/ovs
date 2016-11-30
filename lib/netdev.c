@@ -2259,6 +2259,21 @@ netdev_ports_flow_dumps_create(const void *obj, int *ports)
     return dumps;
 }
 
+int
+netdev_ports_flow_del(const void *obj, const ovs_u128 *ufid,
+                      struct dpif_flow_stats *stats)
+{
+    struct port_to_netdev_data *data;
+
+    HMAP_FOR_EACH(data, node, &port_to_netdev) {
+        if (data->obj == obj && !netdev_flow_del(data->netdev, stats, ufid)) {
+            return 0;
+        }
+    }
+
+    return ENOENT;
+}
+
 bool netdev_flow_api_enabled = false;
 
 void
