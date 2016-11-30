@@ -1908,6 +1908,53 @@ dpif_netlink_operate__(struct dpif_netlink *dpif,
     return n_ops;
 }
 
+static bool
+parse_flow_get(struct dpif_netlink *dpif, struct dpif_flow_get *get)
+{
+    struct dpif_flow *dpif_flow = get->flow;
+    struct ovs_list port_list;
+    struct netdev_list_element *element;
+    struct match match;
+    struct nlattr *actions = 0;
+    struct dpif_flow_stats stats;
+    struct ofpbuf buf;
+    uint64_t act_buf[1024 / 8];
+    bool found = false;
+    struct odputil_keybuf maskbuf;
+    struct odputil_keybuf keybuf;
+    struct odputil_keybuf actbuf;
+    struct ofpbuf key, mask, act;
+
+    ofpbuf_use_stack(&buf, &act_buf, sizeof act_buf);
+    netdev_hmap_port_get_list(dpif->dpif.dpif_class, &port_list);
+    LIST_FOR_EACH(element, node, &port_list) {
+        if (!netdev_flow_get(element->netdev, &match, &actions, &stats,
+                             (ovs_u128 *) get->ufid, &buf)) {
+            found = true;
+        }
+    }
+    netdev_port_list_del(&port_list);
+    if (!found) {
+        return false;
+    }
+
+    VLOG_DBG("found flow from netdev, translating to dpif flow");
+
+    ofpbuf_use_stack(&key, &keybuf, sizeof keybuf);
+    ofpbuf_use_stack(&act, &actbuf, sizeof actbuf);
+    ofpbuf_use_stack(&mask, &maskbuf, sizeof maskbuf);
+    dpif_netlink_netdev_match_to_dpif_flow(&match, &key, &mask, actions,
+                                           &stats,
+                                           (ovs_u128 *) get->ufid,
+                                           dpif_flow,
+                                           false);
+    ofpbuf_put(get->buffer, nl_attr_get(actions), nl_attr_get_size(actions));
+    dpif_flow->actions = ofpbuf_at(get->buffer, 0, 0);
+    dpif_flow->actions_len = nl_attr_get_size(actions);
+
+    return true;
+}
+
 static int
 parse_key_and_mask_to_match(const struct nlattr *key, size_t key_len,
                             const struct nlattr *mask, size_t mask_len,
@@ -2127,7 +2174,16 @@ try_send_to_netdev(struct dpif_netlink *dpif, struct dpif_op *op)
                        del->ufid, "DEL");
         return parse_flow_del(dpif, del);
     }
-    case DPIF_OP_FLOW_GET:
+    case DPIF_OP_FLOW_GET: {
+        struct dpif_flow_get *get = &op->u.flow_get;
+
+        if (!op->u.flow_get.ufid) {
+            return false;
+        }
+        dbg_print_flow(get->key, get->key_len, NULL, 0, NULL, 0,
+                       get->ufid, "GET");
+        return parse_flow_get(dpif, get);
+    }
     case DPIF_OP_EXECUTE:
     default:
         break;
