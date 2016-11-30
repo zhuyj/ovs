@@ -554,13 +554,42 @@ netdev_tc_flow_put(struct netdev *netdev,
 
 int
 netdev_tc_flow_get(struct netdev *netdev OVS_UNUSED,
-                      struct match *match OVS_UNUSED,
-                      struct nlattr **actions OVS_UNUSED,
-                      struct dpif_flow_stats *stats OVS_UNUSED,
-                      ovs_u128 *ufid OVS_UNUSED,
-                      struct ofpbuf *buf OVS_UNUSED)
+                      struct match *match,
+                      struct nlattr **actions,
+                      struct dpif_flow_stats *stats,
+                      ovs_u128 *ufid,
+                      struct ofpbuf *buf)
 {
-    return EOPNOTSUPP;
+    struct netdev *dev;
+    struct tc_flow tc_flow;
+    struct flow *mask;
+    int prio = 0;
+    int ifindex;
+    int err;
+    int handle = get_ufid_tc_mapping(ufid, &prio, &dev);
+
+    if (!handle) {
+        return ENOENT;
+    }
+
+    ifindex = netdev_get_ifindex(dev);
+    VLOG_DBG("get: ifindex: %d handle: %d prio: %d", ifindex, handle, prio);
+    err = tc_get_flower(ifindex, handle, prio, &tc_flow);
+    netdev_close(dev);
+    if (err) {
+        VLOG_ERR("could not get (if: %d prio: %d handle: %d), error: %s",
+                 ifindex, prio, handle, ovs_strerror(err));
+        return err;
+    }
+    odp_port_t in_port = netdev_hmap_port_get_byifidx(ifindex);
+
+    parse_tc_flow_to_match(&tc_flow, match, actions, stats, buf);
+
+    mask = &match->wc.masks;
+    match_set_in_port(match, in_port);
+    memset(&mask->in_port, 0xFF, sizeof(mask->in_port));
+
+    return 0;
 }
 
 int
