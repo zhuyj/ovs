@@ -725,7 +725,33 @@ netdev_tc_flow_del(struct netdev *netdev OVS_UNUSED,
                    struct dpif_flow_stats *stats,
                    const ovs_u128 *ufid)
 {
-    return EOPNOTSUPP;
+    struct netdev *dev;
+    int prio = 0;
+    int ifindex;
+    int error;
+    int handle = get_ufid_tc_mapping(ufid, &prio, &dev);
+
+    if (!handle) {
+        return ENOENT;
+    }
+
+    ifindex = netdev_get_ifindex(dev);
+    if (ifindex < 0) {
+        VLOG_ERR_RL(&rl_err, "failed to get ifindex for %s: %s",
+                    netdev_get_name(dev), ovs_strerror(-ifindex));
+        netdev_close(dev);
+        return -ifindex;
+    }
+
+    error = tc_del_filter(ifindex, prio, handle);
+    del_ufid_tc_mapping(ufid);
+
+    netdev_close(dev);
+
+    if (stats) {
+        memset(stats, 0, sizeof(*stats));
+    }
+    return error;
 }
 
 int
