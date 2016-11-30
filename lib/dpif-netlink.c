@@ -2056,6 +2056,25 @@ parse_flow_put(struct dpif_netlink *dpif, struct dpif_flow_put *put)
     return false;
 }
 
+static bool
+parse_flow_del(struct dpif_netlink *dpif, struct dpif_flow_del *del)
+{
+    bool ret = false;
+    struct ovs_list port_list;
+    struct netdev_list_element *element;
+
+    netdev_hmap_port_get_list(dpif->dpif.dpif_class, &port_list);
+    LIST_FOR_EACH(element, node, &port_list) {
+        if (!netdev_flow_del(element->netdev, del->stats,
+                             CONST_CAST(ovs_u128 *, del->ufid))) {
+            ret = true;
+            break;
+        }
+    }
+    netdev_port_list_del(&port_list);
+    return ret;
+}
+
 static void
 dbg_print_flow(const struct nlattr *key, size_t key_len,
                const struct nlattr *mask, size_t mask_len,
@@ -2098,7 +2117,16 @@ try_send_to_netdev(struct dpif_netlink *dpif, struct dpif_op *op)
                        put->actions, put->actions_len, put->ufid, "PUT");
         return parse_flow_put(dpif, put);
     }
-    case DPIF_OP_FLOW_DEL:
+    case DPIF_OP_FLOW_DEL: {
+        struct dpif_flow_del *del = &op->u.flow_del;
+
+        if (!del->ufid) {
+            return false;
+        }
+        dbg_print_flow(del->key, del->key_len, NULL, 0, NULL, 0,
+                       del->ufid, "DEL");
+        return parse_flow_del(dpif, del);
+    }
     case DPIF_OP_FLOW_GET:
     case DPIF_OP_EXECUTE:
     default:
