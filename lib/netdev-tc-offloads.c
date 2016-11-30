@@ -565,10 +565,23 @@ netdev_tc_flow_get(struct netdev *netdev OVS_UNUSED,
 
 int
 netdev_tc_flow_del(struct netdev *netdev OVS_UNUSED,
-                      struct dpif_flow_stats *stats OVS_UNUSED,
-                      ovs_u128 *ufid OVS_UNUSED)
+                      struct dpif_flow_stats *stats,
+                      ovs_u128 *ufid)
 {
-    return EOPNOTSUPP;
+    struct netdev *dev;
+    int old_prio = 0;
+    int old_handle = get_ufid_tc_mapping(ufid, &old_prio, &dev);
+
+    if (old_handle && old_prio) {
+        int err = tc_del_flower(netdev_get_ifindex(dev), old_handle, old_prio);
+        del_ufid_tc_mapping(ufid);
+        netdev_close(dev);
+        if (stats) {
+            memset(stats, 0, sizeof(*stats));
+        }
+        return err;
+    }
+    return ENOENT;
 }
 
 int
