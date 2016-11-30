@@ -173,6 +173,43 @@ add_ufid_tc_mapping(ovs_u128 *ufid, int prio, int handle, struct netdev *netdev)
     return replace;
 }
 
+struct prio_map_data {
+    struct hmap_node node;
+    struct tc_flow_key mask;
+    uint16_t protocol;
+    uint16_t prio;
+};
+
+static uint16_t
+get_prio_for_tc_flow(struct tc_flow *tc_flow)
+{
+    static struct hmap prios = HMAP_INITIALIZER(&prios);
+    static struct ovs_mutex prios_lock = OVS_MUTEX_INITIALIZER;
+    static int last_prio = 0;
+    size_t key_len = sizeof(struct tc_flow_key);
+    size_t hash = hash_bytes(&tc_flow->mask, key_len, tc_flow->key.eth_type);
+    struct prio_map_data *data;
+    struct prio_map_data *new_data;
+
+    ovs_mutex_lock(&prios_lock);
+    HMAP_FOR_EACH_WITH_HASH(data, node, hash, &prios) {
+        if (!memcmp(&tc_flow->mask, &data->mask, key_len)
+            && data->protocol == tc_flow->key.eth_type) {
+            ovs_mutex_unlock(&prios_lock);
+            return data->prio;
+        }
+    }
+
+    new_data = xzalloc(sizeof *new_data);
+    memcpy(&new_data->mask, &tc_flow->mask, key_len);
+    new_data->prio = ++last_prio;
+    new_data->protocol = tc_flow->key.eth_type;
+    hmap_insert(&prios, &new_data->node, hash);
+    ovs_mutex_unlock(&prios_lock);
+
+    return new_data->prio;
+}
+
 int
 netdev_tc_flow_flush(struct netdev *netdev)
 {
