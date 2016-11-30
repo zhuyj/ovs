@@ -363,15 +363,193 @@ netdev_tc_flow_dump_next(struct netdev_flow_dump *dump,
     return false;
 }
 
-int
-netdev_tc_flow_put(struct netdev *netdev OVS_UNUSED,
-                      struct match *match OVS_UNUSED,
-                      struct nlattr *actions OVS_UNUSED,
-                      size_t actions_len OVS_UNUSED,
-                      struct dpif_flow_stats *stats OVS_UNUSED,
-                      ovs_u128 *ufid OVS_UNUSED)
+static int
+parse_put_flow_set_action(struct tc_flow *tc_flow, const struct nlattr *set,
+                          size_t set_len)
 {
-    return EOPNOTSUPP;
+    const struct nlattr *set_attr;
+    size_t set_left;
+
+    NL_ATTR_FOR_EACH_UNSAFE(set_attr, set_left, set, set_len) {
+        if (nl_attr_type(set_attr) == OVS_KEY_ATTR_TUNNEL) {
+            const struct nlattr *tunnel = nl_attr_get(set_attr);
+            const size_t tunnel_len = nl_attr_get_size(set_attr);
+            const struct nlattr *tun_attr;
+            size_t tun_left;
+
+            tc_flow->set.set = true;
+            NL_ATTR_FOR_EACH_UNSAFE(tun_attr, tun_left, tunnel, tunnel_len) {
+                switch (nl_attr_type(tun_attr)) {
+                    case OVS_TUNNEL_KEY_ATTR_ID:{
+                        tc_flow->set.id = nl_attr_get_be64(tun_attr);
+                    }
+                    break;
+                    case OVS_TUNNEL_KEY_ATTR_IPV4_SRC:{
+                        tc_flow->set.ipv4_src = nl_attr_get_be32(tun_attr);
+                    }
+                    break;
+                    case OVS_TUNNEL_KEY_ATTR_IPV4_DST:{
+                        tc_flow->set.ipv4_dst = nl_attr_get_be32(tun_attr);
+                    }
+                    break;
+                    case OVS_TUNNEL_KEY_ATTR_TP_SRC:{
+                        tc_flow->set.tp_src = nl_attr_get_be16(tun_attr);
+                    }
+                    break;
+                    case OVS_TUNNEL_KEY_ATTR_TP_DST:{
+                        tc_flow->set.tp_dst = nl_attr_get_be16(tun_attr);
+                    }
+                    break;
+                }
+            }
+            if (tc_flow->set.tp_dst == 0) {
+                tc_flow->set.tp_dst = ntohs(4789);
+            }
+        }
+        else {
+            VLOG_ERR("Unsupported output type!\n");
+            return -1;
+        }
+    }
+    return 0;
+}
+
+int
+netdev_tc_flow_put(struct netdev *netdev,
+                      struct match *match,
+                      struct nlattr *actions,
+                      size_t actions_len,
+                      struct dpif_flow_stats *stats OVS_UNUSED,
+                      ovs_u128 *ufid)
+{
+    struct tc_flow tc_flow;
+    struct flow *key = &match->flow;
+    struct flow *mask = &match->wc.masks;
+    const struct flow_tnl *tnl = &match->flow.tunnel;
+    struct nlattr *nla;
+    size_t left;
+    int prio = 0;
+    int handle;
+    int err;
+
+    memset(&tc_flow, 0, sizeof(tc_flow));
+
+    if (tnl->tun_id) {
+        VLOG_INFO("tun_id %#"PRIx64, ntohll(tnl->tun_id));
+        VLOG_DBG("tun_src "IP_FMT" tun_dst "IP_FMT,
+                 IP_ARGS(tnl->ip_src), IP_ARGS(tnl->ip_dst));
+        VLOG_DBG("tun_tp_src %d, tun_tp_dst %d",
+                 ntohs(tnl->tp_src), ntohs(tnl->tp_dst));
+        tc_flow.tunnel.id = tnl->tun_id;
+        tc_flow.tunnel.ipv4_src = tnl->ip_src;
+        tc_flow.tunnel.ipv4_dst = tnl->ip_dst;
+        tc_flow.tunnel.tp_src = tnl->tp_src;
+        tc_flow.tunnel.tp_dst = tnl->tp_dst;
+        tc_flow.tunnel.tunnel = true;
+    }
+
+    tc_flow.key.eth_type = key->dl_type;
+    tc_flow.mask.eth_type = mask->dl_type;
+
+    if (mask->vlan_tci) {
+        ovs_be16 vid_mask = mask->vlan_tci & htons(VLAN_VID_MASK);
+        ovs_be16 pcp_mask = mask->vlan_tci & htons(VLAN_PCP_MASK);
+        ovs_be16 cfi = mask->vlan_tci & htons(VLAN_CFI);
+
+        if (cfi && key->vlan_tci & htons(VLAN_CFI)
+            && (!vid_mask || vid_mask == htons(VLAN_VID_MASK))
+            && (!pcp_mask || pcp_mask == htons(VLAN_PCP_MASK))
+            && (vid_mask || pcp_mask)) {
+            if (vid_mask) {
+                tc_flow.key.vlan_id = vlan_tci_to_vid(key->vlan_tci);
+                VLOG_DBG("vlan_id: %d\n", tc_flow.key.vlan_id);
+            }
+            if (pcp_mask) {
+                tc_flow.key.vlan_prio = vlan_tci_to_pcp(key->vlan_tci);
+                VLOG_DBG("vlan_prio %d\n", tc_flow.key.vlan_prio);
+            }
+            tc_flow.key.encap_eth_type = key->dl_type;
+            tc_flow.key.eth_type = htons(ETH_TYPE_VLAN);
+        } else if (mask->vlan_tci == htons(0xffff) &&
+                   ntohs(key->vlan_tci) == 0) {
+            VLOG_DBG("no vlan");
+        } else {
+            VLOG_DBG("vlan_tci=0x%x/0x%x", ntohs(key->vlan_tci), ntohs(mask->vlan_tci));
+            return EOPNOTSUPP;
+        }
+    }
+
+    tc_flow.key.dst_mac = key->dl_dst;
+    memset(&tc_flow.mask.dst_mac, 0xFF, sizeof(tc_flow.mask.dst_mac));
+    tc_flow.key.src_mac = key->dl_src;
+    tc_flow.mask.src_mac = mask->dl_src;
+
+    if (tc_flow.key.eth_type == htons(ETH_P_IP)
+        || tc_flow.key.eth_type == htons(ETH_P_IPV6)) {
+        tc_flow.key.ip_proto = key->nw_proto;
+        tc_flow.mask.ip_proto = mask->nw_proto;
+    }
+    tc_flow.key.ipv4.ipv4_src = key->nw_src;
+    tc_flow.mask.ipv4.ipv4_src = mask->nw_src;
+    tc_flow.key.ipv4.ipv4_dst = key->nw_dst;
+    tc_flow.mask.ipv4.ipv4_dst = mask->nw_dst;
+
+    tc_flow.key.dst_port = key->tp_dst;
+    tc_flow.mask.dst_port = mask->tp_dst;
+    tc_flow.key.src_port = key->tp_src;
+    tc_flow.mask.src_port = mask->tp_src;
+
+    tc_flow.ifindex = netdev_get_ifindex(netdev);
+
+    NL_ATTR_FOR_EACH (nla, left, actions, actions_len) {
+        if (nl_attr_type(nla) == OVS_ACTION_ATTR_OUTPUT) {
+            const struct nlattr *out = nl_attr_get(nla);
+            const size_t out_len = nl_attr_get_size(nla);
+            const struct nlattr *a;
+            size_t left_o;
+
+            NL_ATTR_FOR_EACH (a, left_o, out, out_len) {
+                if (nl_attr_type(a) == OVS_ACTION_ATTR_OUTPUT) {
+                    tc_flow.ifindex_out = nl_attr_get_u32(a);
+                }
+                else if (nl_attr_type(a) == OVS_TUNNEL_KEY_ATTR_TP_DST) {
+                    tc_flow.set.tp_dst = nl_attr_get_be16(a);
+                }
+            }
+        }
+        else if (nl_attr_type(nla) == OVS_ACTION_ATTR_PUSH_VLAN) {
+            const struct ovs_action_push_vlan *vlan_push = nl_attr_get(nla);
+            tc_flow.vlan_push_id = vlan_tci_to_vid(vlan_push->vlan_tci);
+            tc_flow.vlan_push_prio = vlan_tci_to_pcp(vlan_push->vlan_tci);
+        } else if (nl_attr_type(nla) == OVS_ACTION_ATTR_POP_VLAN) {
+            tc_flow.vlan_pop = 1;
+        } else if (nl_attr_type(nla) == OVS_ACTION_ATTR_SET) {
+            const struct nlattr *set = nl_attr_get(nla);
+            const size_t set_len = nl_attr_get_size(nla);
+
+            parse_put_flow_set_action(&tc_flow, set, set_len);
+        } else {
+            VLOG_DBG("Unsupported output type!");
+            return EOPNOTSUPP;
+        }
+    }
+
+    handle = get_ufid_tc_mapping(ufid, &prio, NULL);
+    if (handle && prio) {
+        VLOG_DBG("updating old handle: %d prio: %d", handle, prio);
+        tc_flow.handle = handle;
+    }
+
+    if (!prio) {
+        prio = get_prio_for_tc_flow(&tc_flow);
+    }
+
+    err = tc_replace_flower(&tc_flow, prio);
+    if (!err) {
+        add_ufid_tc_mapping(ufid, prio, tc_flow.handle, netdev);
+    }
+
+    return err;
 }
 
 int
