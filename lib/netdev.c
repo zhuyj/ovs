@@ -2071,7 +2071,24 @@ netdev_init_flow_api(struct netdev *netdev)
 {
     const struct netdev_class *class = netdev->netdev_class;
 
+    if (!netdev_flow_api_enabled) {
+        return EOPNOTSUPP;
+    }
+
     return (class->init_flow_api
             ? class->init_flow_api(netdev)
             : EOPNOTSUPP);
+}
+bool netdev_flow_api_enabled = false;
+
+void
+netdev_set_flow_api_enabled(bool enabled)
+{
+    static struct ovsthread_once once = OVSTHREAD_ONCE_INITIALIZER;
+
+    if (ovsthread_once_start(&once)) {
+        netdev_flow_api_enabled = enabled;
+        VLOG_INFO("netdev: Flow API %s", enabled? "Enabled" : "Disabled");
+        ovsthread_once_done(&once);
+    }
 }
