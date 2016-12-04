@@ -2921,6 +2921,8 @@ bridge_run(void)
     cfg = ovsrec_open_vswitch_first(idl);
 
     if (cfg) {
+        netdev_set_flow_api_enabled(smap_get_bool(&cfg->other_config,
+                                                  "hw-offload", false));
         dpdk_init(&cfg->other_config);
     }
 
