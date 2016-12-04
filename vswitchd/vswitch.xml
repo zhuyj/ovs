@@ -199,6 +199,20 @@
         </p>
       </column>
 
+      <column name="other_config" key="skip-hw"
+              type='{"type": "boolean"}'>
+        <p>
+            Set this value to <code>true</code> for flows offloaded using tc flower
+            flower classifier be handled in software (use skip_hw flower flag).
+        </p>
+        <p>
+            This is only relevant if HW offloading is enabled (hw-offload).
+        </p>
+        <p>
+          The default value is <code>false</code>.
+        </p>
+      </column>
+
       <column name="other_config" key="dpdk-lcore-mask"
               type='{"type": "integer", "minInteger": 1}'>
         <p>
