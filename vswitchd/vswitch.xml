@@ -188,6 +188,17 @@
         </p>
       </column>
 
+      <column name="other_config" key="skip-hw"
+              type='{"type": "boolean"}'>
+        <p>
+            Set this value to <code>true</code> for tc flow offloading
+            will use cls flower skip_hw flag - tc software datapath.
+        </p>
+        <p>
+          The default value is <code>false</code>.
+        </p>
+      </column>
+
       <column name="other_config" key="dpdk-lcore-mask"
               type='{"type": "integer", "minInteger": 1}'>
         <p>

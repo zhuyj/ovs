@@ -68,6 +68,7 @@
 #include "lib/vswitch-idl.h"
 #include "xenserver.h"
 #include "vlan-bitmap.h"
+#include "tc.h"
 
 VLOG_DEFINE_THIS_MODULE(bridge);
 
@@ -2919,6 +2920,7 @@ bridge_run(void)
     cfg = ovsrec_open_vswitch_first(idl);
 
     if (cfg) {
+        tc_set_skip_hw(smap_get_bool(&cfg->other_config, "skip-hw", false));
         dpdk_init(&cfg->other_config);
     }
 
