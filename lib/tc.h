@@ -20,6 +20,8 @@
 #include "odp-netlink.h"
 #include "netlink-socket.h"
 
+#define TC_POLICY_DEFAULT "none"
+
 struct netdev;
 
 struct tc_flower_key {
@@ -105,6 +107,7 @@ int tc_flush(int ifindex);
 int tc_dump_flower_start(int ifindex, struct nl_dump *dump);
 int parse_netlink_to_tc_flower(struct ofpbuf *reply,
                                struct tc_flower *flower);
+void tc_set_policy(const char *policy);
 
 unsigned int tc_make_handle(unsigned int major, unsigned int minor);
 unsigned int tc_get_major(unsigned int handle);

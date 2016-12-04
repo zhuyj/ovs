@@ -179,7 +179,7 @@ int netdev_flow_del(struct netdev *, struct dpif_flow_stats *,
                     const ovs_u128 *);
 int netdev_init_flow_api(struct netdev *);
 extern bool netdev_flow_api_enabled;
-void netdev_set_flow_api_enabled(bool flow_api_enabled);
+void netdev_set_flow_api_enabled(const struct smap *ovs_other_config);
 
 /* native tunnel APIs */
 /* Structure to pass parameters required to build a tunnel header. */
