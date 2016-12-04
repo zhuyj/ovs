@@ -50,6 +50,10 @@
 #include "unixctl.h"
 #include "util.h"
 #include "openvswitch/ofp-parse.h"
+#include "ovsdb-idl.h"
+#include "vswitch-idl.h"
+#include "db-ctl-base.h"
+#include "tc.h"
 
 typedef int dpctl_command_handler(int argc, const char *argv[],
                                   struct dpctl_params *);
@@ -1643,6 +1647,46 @@ static const struct dpctl_command all_commands[] = {
 static const struct dpctl_command *get_all_dpctl_commands(void)
 {
     return all_commands;
+}
+
+
+int
+dpctl_read_db()
+{
+    char *db = ctl_default_db();
+    struct ovsdb_idl *idl = ovsdb_idl_create(db, &ovsrec_idl_class, true,
+                                             true);
+    ovsdb_idl_track_add_all(idl);
+    unsigned int seqno = ovsdb_idl_get_seqno(idl);
+    const struct ovsrec_open_vswitch *cfg;
+
+    for (;;) {
+        /* synchronize OVSDB */
+        ovsdb_idl_run(idl);
+
+        if (!ovsdb_idl_is_alive(idl)) {
+            int retval = ovsdb_idl_get_last_error(idl);
+            ctl_fatal("%s: database connection failed (%s)",
+                      db, ovs_retval_to_string(retval));
+        }
+
+        if (seqno != ovsdb_idl_get_seqno(idl)) {
+            cfg = ovsrec_open_vswitch_first(idl);
+            if (cfg) {
+                netdev_set_flow_api_enabled(smap_get_bool(&cfg->other_config,
+                                                          "hw-offload",
+                                                          false));
+                tc_set_skip_hw(smap_get_bool(&cfg->other_config, "skip_hw",
+                                             false));
+                break;
+            }
+        } else {
+            ovsdb_idl_wait(idl);
+        }
+    }
+
+    ovsdb_idl_destroy(idl);
+    return 0;
 }
 
 /* Runs the command designated by argv[0] within the command table specified by
