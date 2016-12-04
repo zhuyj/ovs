@@ -50,6 +50,8 @@ struct dpctl_params {
     void (*usage)(void *aux);
 };
 
+int dpctl_read_db(void);
+
 int dpctl_run_command(int argc, const char *argv[],
                       struct dpctl_params *dpctl_p);
 
