@@ -66,6 +66,8 @@ main(int argc, char *argv[])
     dpctl_p.output = dpctl_print;
     dpctl_p.usage = usage;
 
+    dpctl_read_db();
+
     error = dpctl_run_command(argc - optind, (const char **) argv + optind,
                               &dpctl_p);
     return error ? EXIT_FAILURE : EXIT_SUCCESS;
