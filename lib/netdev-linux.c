@@ -75,6 +75,7 @@
 #include "openvswitch/vlog.h"
 #include "util.h"
 #include "netdev-tc-offloads.h"
+#include "tc.h"
 
 VLOG_DEFINE_THIS_MODULE(netdev_linux);
 
@@ -2057,6 +2058,7 @@ netdev_linux_set_policing(struct netdev *netdev_,
     struct netdev_linux *netdev = netdev_linux_cast(netdev_);
     const char *netdev_name = netdev_get_name(netdev_);
     int error;
+    int ifindex;
 
     kbits_burst = (!kbits_rate ? 0       /* Force to 0 if no rate specified. */
                    : !kbits_burst ? 8000 /* Default to 8000 kbits if 0. */
@@ -2074,22 +2076,29 @@ netdev_linux_set_policing(struct netdev *netdev_,
     }
 
     COVERAGE_INC(netdev_set_policing);
-    /* Remove any existing ingress qdisc. */
-    error = tc_add_del_ingress_qdisc(netdev_, false);
+    error = tc_add_del_ingress_qdisc(netdev_, true);
+    if (error == EEXIST) error = 0;
     if (error) {
-        VLOG_WARN_RL(&rl, "%s: removing policing failed: %s",
+        VLOG_WARN_RL(&rl, "%s: adding policing qdisc failed: %s",
+                netdev_name, ovs_strerror(error));
+        goto out;
+    }
+
+    /* Remove any existing policing. */
+    error = get_ifindex(&netdev->up, &ifindex);
+    if (error)  {
+        VLOG_WARN_RL(&rl, "%s: getting ifindex failed: %s",
+                     netdev_name, ovs_strerror(error));
+        goto out;
+    }
+    error = tc_flush_flower(ifindex);
+    if (error)  {
+        VLOG_WARN_RL(&rl, "%s: flushing policing failed: %s",
                      netdev_name, ovs_strerror(error));
         goto out;
     }
 
     if (kbits_rate) {
-        error = tc_add_del_ingress_qdisc(netdev_, true);
-        if (error) {
-            VLOG_WARN_RL(&rl, "%s: adding policing qdisc failed: %s",
-                         netdev_name, ovs_strerror(error));
-            goto out;
-        }
-
         error = tc_add_policer(netdev_, kbits_rate, kbits_burst);
         if (error){
             VLOG_WARN_RL(&rl, "%s: adding policing action failed: %s",
