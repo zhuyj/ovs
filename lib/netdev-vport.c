@@ -742,6 +742,32 @@ get_stats(const struct netdev *netdev, struct netdev_stats *stats)
     return 0;
 }
 
+static int
+do_get_ifindex(const char *netdev_name)
+{
+    struct ifreq ifr;
+    int error;
+
+    ovs_strzcpy(ifr.ifr_name, netdev_name, sizeof ifr.ifr_name);
+
+    error = af_inet_ioctl(SIOCGIFINDEX, &ifr);
+    if (error) {
+        VLOG_ERR("ioctl(SIOCGIFINDEX) on %s device failed: %s",
+                     netdev_name, ovs_strerror(error));
+        return -error;
+    }
+    return ifr.ifr_ifindex;
+}
+
+static int
+netdev_vport_get_ifindex(const struct netdev *netdev_)
+{
+    char buf[32];
+    const char *name = netdev_vport_get_dpif_port(netdev_, buf, sizeof(buf));
+
+    return do_get_ifindex(name);
+}
+
 
 #define VPORT_FUNCTIONS(GET_CONFIG, SET_CONFIG,             \
                         GET_TUNNEL_CONFIG, GET_STATUS,      \
@@ -771,7 +797,7 @@ get_stats(const struct netdev *netdev, struct netdev_stats *stats)
     netdev_vport_get_etheraddr,                             \
     NULL,                       /* get_mtu */               \
     NULL,                       /* set_mtu */               \
-    NULL,                       /* get_ifindex */           \
+    netdev_vport_get_ifindex,                               \
     NULL,                       /* get_carrier */           \
     NULL,                       /* get_carrier_resets */    \
     NULL,                       /* get_miimon */            \
