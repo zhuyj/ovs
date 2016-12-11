@@ -44,6 +44,7 @@
 #include "unaligned.h"
 #include "unixctl.h"
 #include "openvswitch/vlog.h"
+#include "netdev-tc-offloads.h"
 
 VLOG_DEFINE_THIS_MODULE(netdev_vport);
 
@@ -838,14 +839,14 @@ netdev_vport_get_ifindex(const struct netdev *netdev_)
     NULL,                   /* rx_wait */                   \
     NULL,                   /* rx_drain */                  \
                                                             \
-    NULL,                   /* flow_flush */                \
-    NULL,                   /* flow_dump_create */          \
-    NULL,                   /* flow_dump_destroy */         \
-    NULL,                   /* flow_dump_next */            \
-    NULL,                   /* flow_put */                  \
-    NULL,                   /* flow_get */                  \
-    NULL,                   /* flow_del */                  \
-    NULL,                   /* init_flow_api */
+    netdev_tc_flow_flush,                                   \
+    netdev_tc_flow_dump_create,                             \
+    netdev_tc_flow_dump_destroy,                            \
+    netdev_tc_flow_dump_next,                               \
+    netdev_tc_flow_put,                                     \
+    netdev_tc_flow_get,                                     \
+    netdev_tc_flow_del,                                     \
+    netdev_tc_init_flow_api,
 
 
 #define TUNNEL_CLASS(NAME, DPIF_PORT, BUILD_HEADER, PUSH_HEADER, POP_HEADER)   \
