@@ -45,6 +45,7 @@
 #include "unaligned.h"
 #include "unixctl.h"
 #include "openvswitch/vlog.h"
+#include "netdev-tc-offloads.h"
 
 VLOG_DEFINE_THIS_MODULE(netdev_vport);
 
@@ -779,7 +780,23 @@ get_stats(const struct netdev *netdev, struct netdev_stats *stats)
     return 0;
 }
 
-
+#ifdef __linux__
+static int
+netdev_vport_get_ifindex(const struct netdev *netdev_)
+{
+    char buf[NETDEV_VPORT_NAME_BUFSIZE];
+    const char *name = netdev_vport_get_dpif_port(netdev_, buf, sizeof(buf));
+
+    return linux_get_ifindex(name);
+}
+
+#define NETDEV_VPORT_GET_IFINDEX netdev_vport_get_ifindex
+#define NETDEV_FLOW_OFFLOAD_API LINUX_FLOW_OFFLOAD_API
+#else /* !__linux__ */
+#define NETDEV_VPORT_GET_IFINDEX NULL
+#define NETDEV_FLOW_OFFLOAD_API NO_OFFLOAD_API
+#endif /* __linux__ */
+
 #define VPORT_FUNCTIONS(GET_CONFIG, SET_CONFIG,             \
                         GET_TUNNEL_CONFIG, GET_STATUS,      \
                         BUILD_HEADER,                       \
@@ -849,14 +866,7 @@ get_stats(const struct netdev *netdev, struct netdev_stats *stats)
     NULL,                   /* rx_wait */                   \
     NULL,                   /* rx_drain */                  \
                                                             \
-    NULL,                   /* flow_flush */                \
-    NULL,                   /* flow_dump_create */          \
-    NULL,                   /* flow_dump_destroy */         \
-    NULL,                   /* flow_dump_next */            \
-    NULL,                   /* flow_put */                  \
-    NULL,                   /* flow_get */                  \
-    NULL,                   /* flow_del */                  \
-    NULL,                   /* init_flow_api */
+    NETDEV_FLOW_OFFLOAD_API
 
 
 #define TUNNEL_CLASS(NAME, DPIF_PORT, BUILD_HEADER, PUSH_HEADER, POP_HEADER)   \
