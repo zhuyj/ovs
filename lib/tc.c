@@ -952,7 +952,7 @@ __nl_msg_put_flower_options(struct ofpbuf *request, struct tc_flow *tc_flow)
     }
 
     nl_msg_put_u32(request, TCA_FLOWER_FLAGS,
-                   SKIP_HW || tc_flow->tunnel.tunnel
+                   SKIP_HW
                    ? TCA_CLS_FLAGS_SKIP_HW
                    : TCA_CLS_FLAGS_SKIP_SW);
 
