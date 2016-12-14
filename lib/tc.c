@@ -566,12 +566,10 @@ int
 parse_tc_flow(struct ofpbuf *reply, struct tc_flow *tc_flow)
 {
     struct tcmsg *tc;
-    struct ofpbuf mask_d, *mask = &mask_d;
     struct nlattr *ta[ARRAY_SIZE(tca_policy)];
     const char *kind;
 
     memset(tc_flow, 0, sizeof *tc_flow);
-    ofpbuf_init(mask, 512);
     if (NLMSG_HDRLEN + (sizeof *tc) > reply->size) {
         return EPROTO;
     }
@@ -629,8 +627,7 @@ tc_flush_flower(int ifindex)
     tcmsg->tcm_parent = tc_make_handle(0xffff, 0);
     tcmsg->tcm_info = tc_make_handle(0, 0);
 
-    error = tc_transact(&request, 0);
-    return error;
+    return tc_transact(&request, 0);
 }
 
 int
