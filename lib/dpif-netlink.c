@@ -2151,7 +2151,7 @@ static bool
 try_send_to_netdev(struct dpif_netlink *dpif, struct dpif_op *op)
 {
     switch (op->type) {
-    case DPIF_OP_FLOW_PUT: {
+    case DPIF_OP_FLOW_PUT: ;
         struct dpif_flow_put *put = &op->u.flow_put;
 
         if (!put->ufid) {
@@ -2160,8 +2160,7 @@ try_send_to_netdev(struct dpif_netlink *dpif, struct dpif_op *op)
         dbg_print_flow(put->key, put->key_len, put->mask, put->mask_len,
                        put->actions, put->actions_len, put->ufid, "PUT");
         return parse_flow_put(dpif, put);
-    }
-    case DPIF_OP_FLOW_GET:
+    case DPIF_OP_FLOW_GET: ;
         struct dpif_flow_get *get = &op->u.flow_get;
 
         if (!op->u.flow_get.ufid) {
@@ -2170,7 +2169,7 @@ try_send_to_netdev(struct dpif_netlink *dpif, struct dpif_op *op)
         dbg_print_flow(get->key, get->key_len, NULL, 0, NULL, 0,
                        get->ufid, "GET");
         return parse_flow_get(dpif, get);
-    case DPIF_OP_FLOW_DEL:
+    case DPIF_OP_FLOW_DEL: ;
         struct dpif_flow_del *del = &op->u.flow_del;
 
         if (!del->ufid) {

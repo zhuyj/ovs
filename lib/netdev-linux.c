@@ -2077,7 +2077,8 @@ netdev_linux_set_policing(struct netdev *netdev_,
 
     COVERAGE_INC(netdev_set_policing);
     error = tc_add_del_ingress_qdisc(netdev_, true);
-    error = (error == EEXIST) ? : 0;
+    if (error == EEXIST)
+	    error = 0;
     if (error) {
         VLOG_WARN_RL(&rl, "%s: adding policing qdisc failed: %s",
                 netdev_name, ovs_strerror(error));
