@@ -1066,7 +1066,7 @@ dpif_netlink_flow_flush(struct dpif *dpif_)
     flow.dp_ifindex = dpif->dp_ifindex;
 
     if (netdev_flow_api_enabled) {
-        netdev_hmap_port_get_list(dpif_->dpif_class, &port_list);
+        netdev_hmap_port_get_list(DPIF_HMAP_KEY(dpif_), &port_list);
         LIST_FOR_EACH(element, node, &port_list) {
             netdev_flow_flush(element->netdev);
         }
@@ -1381,7 +1381,7 @@ static void start_netdev_dump(const struct dpif *dpif_,
 
     struct netdev_list_element *element;
     struct ovs_list port_list;
-    int ports = netdev_hmap_port_get_list(dpif_->dpif_class, &port_list);
+    int ports = netdev_hmap_port_get_list(DPIF_HMAP_KEY(dpif_), &port_list);
     int i = 0;
 
     dump->netdev_dumps =
@@ -1926,7 +1926,7 @@ parse_flow_get(struct dpif_netlink *dpif, struct dpif_flow_get *get)
     struct ofpbuf key, mask, act;
 
     ofpbuf_use_stack(&buf, &act_buf, sizeof act_buf);
-    netdev_hmap_port_get_list(dpif->dpif.dpif_class, &port_list);
+    netdev_hmap_port_get_list(DPIF_HMAP_KEY(&dpif->dpif), &port_list);
     LIST_FOR_EACH(element, node, &port_list) {
         if (!netdev_flow_get(element->netdev, &match, &actions, &stats,
                              (ovs_u128 *) get->ufid, &buf)) {
@@ -2046,7 +2046,7 @@ parse_flow_put(struct dpif_netlink *dpif, struct dpif_flow_put *put)
             }
 
             out_port = nl_attr_get_u32(nla);
-            outdev = netdev_hmap_port_get(out_port, dpif->dpif.dpif_class);
+            outdev = netdev_hmap_port_get(out_port, DPIF_HMAP_KEY(&dpif->dpif));
             tnl_cfg = netdev_get_tunnel_config(outdev);
 
             out_off = nl_msg_start_nested(&buf, OVS_ACTION_ATTR_OUTPUT);
@@ -2072,7 +2072,7 @@ parse_flow_put(struct dpif_netlink *dpif, struct dpif_flow_put *put)
     }
 
     act = ofpbuf_at_assert(&buf, offset, sizeof(struct nlattr));
-    dev = netdev_hmap_port_get(in_port, dpif->dpif.dpif_class);
+    dev = netdev_hmap_port_get(in_port, DPIF_HMAP_KEY(&dpif->dpif));
     err = netdev_flow_put(dev, &match, CONST_CAST(struct nlattr *,
                                                   nl_attr_get(act)),
                           nl_attr_get_size(act), put->stats,
@@ -2110,7 +2110,7 @@ parse_flow_del(struct dpif_netlink *dpif, struct dpif_flow_del *del)
     struct ovs_list port_list;
     struct netdev_list_element *element;
 
-    netdev_hmap_port_get_list(dpif->dpif.dpif_class, &port_list);
+    netdev_hmap_port_get_list(DPIF_HMAP_KEY(&dpif->dpif), &port_list);
     LIST_FOR_EACH(element, node, &port_list) {
         if (!netdev_flow_del(element->netdev, del->stats,
                              CONST_CAST(ovs_u128 *, del->ufid))) {
