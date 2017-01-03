@@ -36,7 +36,13 @@
 
 VLOG_DEFINE_THIS_MODULE(tc);
 
-bool SKIP_HW = false;
+enum tc_offload_policy {
+	TC_POLICY_NONE,
+	TC_POLICY_SKIP_SW,
+	TC_POLICY_SKIP_HW
+};
+
+enum tc_offload_policy tc_policy = TC_POLICY_NONE;
 
 /* Returns tc handle 'major':'minor'. */
 static unsigned int
@@ -667,13 +673,36 @@ tc_get_flower(int ifindex, int handle, int prio, struct tc_flow *tc_flow)
     return error;
 }
 
-void
-tc_set_skip_hw(bool set)
+static int
+tc_get_tc_cls_policy(enum tc_offload_policy policy)
 {
-    if (set != SKIP_HW) {
-        VLOG_INFO("tc: using %s flag", set ? "skip_hw" : "skip_sw");
-        SKIP_HW = set;
+    if (policy == TC_POLICY_SKIP_HW)
+        return TCA_CLS_FLAGS_SKIP_HW;
+    else if (policy == TC_POLICY_SKIP_SW)
+        return TCA_CLS_FLAGS_SKIP_SW;
+    else
+        return 0;
+}
+
+void
+tc_set_policy(const char *policy)
+{
+    if (!policy) {
+       return;
     }
+
+    if (!strcmp(policy, "skip_sw")) {
+        tc_policy = TC_POLICY_SKIP_SW;
+    } else if (!strcmp(policy, "skip_hw")) {
+        tc_policy = TC_POLICY_SKIP_HW;
+    } else if (!strcmp(policy, "none")) {
+        tc_policy = TC_POLICY_NONE;
+    } else {
+        VLOG_WARN("tc: Invalid policy '%s'", policy);
+        return;
+    }
+
+    VLOG_INFO("tc: Using policy '%s'", policy);
 }
 
 static void
@@ -947,10 +976,7 @@ __nl_msg_put_flower_options(struct ofpbuf *request, struct tc_flow *tc_flow)
         /* TODO: support for encap ipv4/ipv6 here */
     }
 
-    nl_msg_put_u32(request, TCA_FLOWER_FLAGS,
-                   SKIP_HW
-                   ? TCA_CLS_FLAGS_SKIP_HW
-                   : TCA_CLS_FLAGS_SKIP_SW);
+    nl_msg_put_u32(request, TCA_FLOWER_FLAGS, tc_get_tc_cls_policy(tc_policy));
 
     if (tc_flow->tunnel.tunnel) {
         __nl_msg_put_flower_tunnel(request, tc_flow);

@@ -1676,8 +1676,8 @@ dpctl_read_db()
                 netdev_set_flow_api_enabled(smap_get_bool(&cfg->other_config,
                                                           "hw-offload",
                                                           false));
-                tc_set_skip_hw(smap_get_bool(&cfg->other_config, "skip_hw",
-                                             false));
+                tc_set_policy(smap_get_def(&cfg->other_config, "tc-offload",
+                                           TC_POLICY_DEFAULT));
                 break;
             }
         } else {

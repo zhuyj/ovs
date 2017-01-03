@@ -199,11 +199,14 @@
         </p>
       </column>
 
-      <column name="other_config" key="skip-hw"
-              type='{"type": "boolean"}'>
+      <column name="other_config" key="tc-policy"
+              type='{"type": "string"}'>
         <p>
-            Set this value to <code>true</code> for flows offloaded using tc flower
-            flower classifier be handled in software (use skip_hw flower flag).
+            Specified the policy used with HW offloading.
+            Options:
+                <code>none</code>    - Add software rule and offload rule to HW.
+                <code>skip_sw</code> - Offload rule to HW only.
+                <code>skip_hw</code> - Add software rule without offloading rule to HW.
         </p>
         <p>
             This is only relevant if HW offloading is enabled (hw-offload).

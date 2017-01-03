@@ -2922,7 +2922,8 @@ bridge_run(void)
     if (cfg) {
         netdev_set_flow_api_enabled(smap_get_bool(&cfg->other_config,
                                                   "hw-offload", false));
-        tc_set_skip_hw(smap_get_bool(&cfg->other_config, "skip-hw", false));
+        tc_set_policy(smap_get_def(&cfg->other_config, "tc-policy",
+                                   TC_POLICY_DEFAULT));
         dpdk_init(&cfg->other_config);
     }
 
