@@ -439,10 +439,9 @@ netdev_tc_flow_put(struct netdev *netdev,
     memset(&tc_flow, 0, sizeof(tc_flow));
 
     if (tnl->tun_id) {
-        VLOG_INFO("tun_id %#"PRIx64, ntohll(tnl->tun_id));
-        VLOG_DBG("tun_src "IP_FMT" tun_dst "IP_FMT,
-                 IP_ARGS(tnl->ip_src), IP_ARGS(tnl->ip_dst));
-        VLOG_DBG("tun_tp_src %d, tun_tp_dst %d",
+        VLOG_DBG("tun_id %#" PRIx64 " tun_src " IP_FMT " tun_dst " IP_FMT
+                 " tun_tp_src %d tun_tp_dst %d", ntohll(tnl->tun_id),
+                 IP_ARGS(tnl->ip_src), IP_ARGS(tnl->ip_dst),
                  ntohs(tnl->tp_src), ntohs(tnl->tp_dst));
         tc_flow.tunnel.id = tnl->tun_id;
         tc_flow.tunnel.ipv4_src = tnl->ip_src;
