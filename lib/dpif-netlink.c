@@ -2142,10 +2142,8 @@ dbg_print_flow(const struct nlattr *key, size_t key_len,
             ds_put_cstr(&s, "\nflow: ");
             odp_flow_format(key, key_len, mask, mask_len, NULL, &s, false);
         }
-        if (actions_len) {
-            ds_put_cstr(&s, "\nactions: ");
-            format_odp_actions(&s, actions, actions_len);
-        }
+        ds_put_cstr(&s, "\nactions: ");
+        format_odp_actions(&s, actions, actions_len);
         VLOG_DBG("\n%s", ds_cstr(&s));
         ds_destroy(&s);
 }
