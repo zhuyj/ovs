@@ -1994,6 +1994,7 @@ netdev_flow_dump_create(struct netdev *netdev)
         return class->flow_dump_create(netdev);
     }
 
+    netdev_ref(netdev);
     dump = xzalloc(sizeof *dump);
     dump->netdev = netdev;
 
@@ -2009,6 +2010,7 @@ netdev_flow_dump_destroy(struct netdev_flow_dump *dump)
         return class->flow_dump_destroy(dump);
     }
 
+    netdev_close(dump->netdev);
     free(dump);
 
     return EOPNOTSUPP;
