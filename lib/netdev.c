@@ -54,6 +54,7 @@
 #include "openvswitch/vlog.h"
 #include "flow.h"
 #include "util.h"
+#include "tc.h"
 
 VLOG_DEFINE_THIS_MODULE(netdev);
 
@@ -2218,13 +2219,21 @@ netdev_port_list_del(struct ovs_list *list)
 bool netdev_flow_api_enabled = false;
 
 void
-netdev_set_flow_api_enabled(bool enabled)
+netdev_set_flow_api_enabled(const struct smap *ovs_other_config)
 {
     static struct ovsthread_once once = OVSTHREAD_ONCE_INITIALIZER;
+    bool enabled;
 
     if (ovsthread_once_start(&once)) {
+        enabled = smap_get_bool(ovs_other_config, "hw-offload", false);
         netdev_flow_api_enabled = enabled;
+
         VLOG_INFO("netdev: Flow API %s", enabled ? "Enabled" : "Disabled");
+
+        if (enabled) {
+            tc_set_policy(smap_get_def(ovs_other_config, "tc-policy",
+                                       TC_POLICY_DEFAULT));
+        }
         ovsthread_once_done(&once);
     }
 }

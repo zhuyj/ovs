@@ -1673,11 +1673,7 @@ dpctl_read_db()
         if (seqno != ovsdb_idl_get_seqno(idl)) {
             cfg = ovsrec_open_vswitch_first(idl);
             if (cfg) {
-                netdev_set_flow_api_enabled(smap_get_bool(&cfg->other_config,
-                                                          "hw-offload",
-                                                          false));
-                tc_set_policy(smap_get_def(&cfg->other_config, "tc-offload",
-                                           TC_POLICY_DEFAULT));
+                netdev_set_flow_api_enabled(&cfg->other_config);
                 break;
             }
         } else {

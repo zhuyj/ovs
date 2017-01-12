@@ -169,7 +169,7 @@ int netdev_flow_get(struct netdev *, struct match *, struct nlattr **actions,
 int netdev_flow_del(struct netdev *, struct dpif_flow_stats *, ovs_u128 *);
 int netdev_init_flow_api(struct netdev *);
 extern bool netdev_flow_api_enabled;
-void netdev_set_flow_api_enabled(bool flow_api_enabled);
+void netdev_set_flow_api_enabled(const struct smap *ovs_other_config);
 
 /* Netdev dumping. */
 struct netdev_list_element {
