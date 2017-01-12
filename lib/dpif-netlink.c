@@ -2019,8 +2019,7 @@ parse_flow_put(struct dpif_netlink *dpif, struct dpif_flow_put *put)
     struct netdev *dev;
     int err;
 
-    /* 0x1234 - fake eth type sent to probe feature */
-    if (put->flags & DPIF_FP_PROBE || match.flow.dl_type == htons(0x1234)) {
+    if (put->flags & DPIF_FP_PROBE) {
         return false;
     }
 
