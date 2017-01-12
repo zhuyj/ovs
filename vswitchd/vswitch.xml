@@ -182,23 +182,6 @@
         </p>
       </column>
 
-      <column name="other_config" key="dpdk-init"
-              type='{"type": "boolean"}'>
-        <p>
-          Set this value to <code>true</code> to enable runtime support for
-          DPDK ports. The vswitch must have compile-time support for DPDK as
-          well.
-        </p>
-        <p>
-          The default value is <code>false</code>. Changing this value requires
-          restarting the daemon
-        </p>
-        <p>
-          If this value is <code>false</code> at startup, any dpdk ports which
-          are configured in the bridge will fail due to memory errors.
-        </p>
-      </column>
-
       <column name="other_config" key="tc-policy"
               type='{"type": "string"}'>
         <p>
@@ -213,6 +196,23 @@
         </p>
         <p>
           The default value is <code>false</code>.
+        </p>
+      </column>
+
+      <column name="other_config" key="dpdk-init"
+              type='{"type": "boolean"}'>
+        <p>
+          Set this value to <code>true</code> to enable runtime support for
+          DPDK ports. The vswitch must have compile-time support for DPDK as
+          well.
+        </p>
+        <p>
+          The default value is <code>false</code>. Changing this value requires
+          restarting the daemon
+        </p>
+        <p>
+          If this value is <code>false</code> at startup, any dpdk ports which
+          are configured in the bridge will fail due to memory errors.
         </p>
       </column>
 
