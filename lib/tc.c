@@ -39,42 +39,93 @@ VLOG_DEFINE_THIS_MODULE(tc);
 static struct vlog_rate_limit parse_err = VLOG_RATE_LIMIT_INIT(5, 5);
 
 /* Returns tc handle 'major':'minor'. */
-static unsigned int
+unsigned int
 tc_make_handle(unsigned int major, unsigned int minor)
 {
     return TC_H_MAKE(major << 16, minor);
 }
 
-static struct tcmsg *
-tc_make_req(int ifindex, int type, unsigned int flags, struct ofpbuf *request)
+/* Returns the major number from 'handle'. */
+unsigned int
+tc_get_major(unsigned int handle)
+{
+    return TC_H_MAJ(handle) >> 16;
+}
+
+/* Returns the minor number from 'handle'. */
+unsigned int
+tc_get_minor(unsigned int handle)
+{
+    return TC_H_MIN(handle);
+}
+
+struct tcmsg *
+tc_make_request(int ifindex, int type, unsigned int flags,
+                struct ofpbuf *request)
 {
     struct tcmsg *tcmsg;
-    struct nlmsghdr *nlmsghdr;
 
     ofpbuf_init(request, 512);
-
-    nl_msg_reserve(request, NLMSG_HDRLEN + sizeof *tcmsg);
-    nlmsghdr = nl_msg_put_uninit(request, NLMSG_HDRLEN);
-    nlmsghdr->nlmsg_len = 0;
-    nlmsghdr->nlmsg_type = type;
-    nlmsghdr->nlmsg_flags = NLM_F_REQUEST | flags;
-    nlmsghdr->nlmsg_seq = 0;
-    nlmsghdr->nlmsg_pid = 0;
-
+    nl_msg_put_nlmsghdr(request, sizeof *tcmsg, type, NLM_F_REQUEST | flags);
     tcmsg = ofpbuf_put_zeros(request, sizeof *tcmsg);
     tcmsg->tcm_family = AF_UNSPEC;
     tcmsg->tcm_ifindex = ifindex;
+    /* Caller should fill in tcmsg->tcm_handle. */
+    /* Caller should fill in tcmsg->tcm_parent. */
 
     return tcmsg;
 }
 
-static int
+int
 tc_transact(struct ofpbuf *request, struct ofpbuf **replyp)
 {
     int error = nl_transact(NETLINK_ROUTE, request, replyp);
-
     ofpbuf_uninit(request);
     return error;
+}
+
+/* Adds or deletes a root ingress qdisc on device with specified ifindex.
+ *
+ * This function is equivalent to running the following when 'add' is true:
+ *     /sbin/tc qdisc add dev <devname> handle ffff: ingress
+ *
+ * This function is equivalent to running the following when 'add' is false:
+ *     /sbin/tc qdisc del dev <devname> handle ffff: ingress
+ *
+ * Where dev <devname> is the device with specified ifindex name.
+ *
+ * The configuration and stats may be seen with the following command:
+ *     /sbin/tc -s qdisc show dev <devname>
+ *
+ *
+ * Returns 0 if successful, otherwise a positive errno value.
+ */
+int
+tc_add_del_ingress_qdisc(int ifindex, bool add)
+{
+    struct ofpbuf request;
+    struct tcmsg *tcmsg;
+    int error;
+    int type = add ? RTM_NEWQDISC : RTM_DELQDISC;
+    int flags = add ? NLM_F_EXCL | NLM_F_CREATE : 0;
+
+    tcmsg = tc_make_request(ifindex, type, flags, &request);
+    tcmsg->tcm_handle = tc_make_handle(0xffff, 0);
+    tcmsg->tcm_parent = TC_H_INGRESS;
+    nl_msg_put_string(&request, TCA_KIND, "ingress");
+    nl_msg_put_unspec(&request, TCA_OPTIONS, NULL, 0);
+
+    error = tc_transact(&request, NULL);
+    if (error) {
+        /* If we're deleting the qdisc, don't worry about some of the
+         * error conditions. */
+        if (!add && (error == ENOENT || error == EINVAL)) {
+            return 0;
+        }
+        return error;
+    }
+
+    return 0;
 }
 
 static const struct nl_policy tca_policy[] = {

@@ -17,9 +17,20 @@
 #ifndef TC_H
 #define TC_H 1
 
+#include <linux/pkt_cls.h>
+#include <linux/pkt_sched.h>
 #include "odp-netlink.h"
 #include "netlink-socket.h"
 
+#define TC_POLICY_DEFAULT "none"
+
+unsigned int tc_make_handle(unsigned int major, unsigned int minor);
+unsigned int tc_get_major(unsigned int handle);
+unsigned int tc_get_minor(unsigned int handle);
+struct tcmsg *tc_make_request(int ifindex, int type, unsigned int flags,
+                              struct ofpbuf *request);
+int tc_transact(struct ofpbuf *request, struct ofpbuf **replyp);
+int tc_add_del_ingress_qdisc(int ifindex, bool add);
 
 struct tc_flower_key {
     ovs_be16 eth_type;
