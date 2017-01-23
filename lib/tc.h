@@ -106,4 +106,12 @@ int tc_dump_flower_start(int ifindex, struct nl_dump *dump);
 int parse_netlink_to_tc_flower(struct ofpbuf *reply,
                                struct tc_flower *flower);
 
+unsigned int tc_make_handle(unsigned int major, unsigned int minor);
+unsigned int tc_get_major(unsigned int handle);
+unsigned int tc_get_minor(unsigned int handle);
+struct tcmsg *tc_make_request(int ifindex, int type, unsigned int flags,
+                              struct ofpbuf *request);
+int tc_transact(struct ofpbuf *request, struct ofpbuf **replyp);
+int tc_add_del_ingress_qdisc(int ifindex, bool add);
+
 #endif /* tc.h */
