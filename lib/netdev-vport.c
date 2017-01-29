@@ -46,6 +46,9 @@
 #include "unixctl.h"
 #include "openvswitch/vlog.h"
 #include "netdev-tc-offloads.h"
+#ifdef __linux__
+#include "netdev-linux.h"
+#endif /* __linux__ */
 
 VLOG_DEFINE_THIS_MODULE(netdev_vport);
 
@@ -825,7 +828,7 @@ netdev_vport_get_ifindex(const struct netdev *netdev_)
     netdev_vport_get_etheraddr,                             \
     NULL,                       /* get_mtu */               \
     NULL,                       /* set_mtu */               \
-    NULL,                       /* get_ifindex */           \
+    NETDEV_VPORT_GET_IFINDEX,                               \
     NULL,                       /* get_carrier */           \
     NULL,                       /* get_carrier_resets */    \
     NULL,                       /* get_miimon */            \
