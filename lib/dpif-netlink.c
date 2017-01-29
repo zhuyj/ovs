@@ -1371,6 +1371,16 @@ dpif_netlink_init_flow_del(struct dpif_netlink *dpif,
                                  del->ufid, del->terse, request);
 }
 
+enum {
+    DUMP_OVS_FLOWS_BIT       = 0,
+    DUMP_OFFLOADED_FLOWS_BIT = 1,
+};
+
+enum {
+    DUMP_OVS_FLOWS       = (1 << DUMP_OVS_FLOWS_BIT),
+    DUMP_OFFLOADED_FLOWS = (1 << DUMP_OFFLOADED_FLOWS_BIT),
+};
+
 struct dpif_netlink_flow_dump {
     struct dpif_flow_dump up;
     struct nl_dump nl_dump;
@@ -1379,6 +1389,7 @@ struct dpif_netlink_flow_dump {
     int netdev_dumps_num;                    /* Number of netdev_flow_dumps */
     struct ovs_mutex netdev_lock;            /* Guards the following. */
     int netdev_current_dump OVS_GUARDED;     /* Shared current dump */
+    int type;                                /* Type of dump */
 };
 
 static struct dpif_netlink_flow_dump *
@@ -1393,7 +1404,7 @@ start_netdev_dump(const struct dpif *dpif_,
 {
     ovs_mutex_init(&dump->netdev_lock);
 
-    if (!netdev_flow_api_enabled) {
+    if (!(dump->type & DUMP_OFFLOADED_FLOWS)) {
         dump->netdev_dumps_num = 0;
         dump->netdev_dumps = NULL;
         return;
@@ -1407,8 +1418,24 @@ start_netdev_dump(const struct dpif *dpif_,
     ovs_mutex_unlock(&dump->netdev_lock);
 }
 
+static int
+dpif_netlink_get_dump_type(char *str) {
+    int type = 0;
+
+    if (!str || !strcmp(str, "ovs") || !strcmp(str, "dpctl")) {
+        type |= DUMP_OVS_FLOWS;
+    }
+    if ((netdev_flow_api_enabled && !str)
+        || (str && (!strcmp(str, "offloaded") || !strcmp(str, "dpctl")))) {
+        type |= DUMP_OFFLOADED_FLOWS;
+    }
+
+    return type;
+}
+
 static struct dpif_flow_dump *
-dpif_netlink_flow_dump_create(const struct dpif *dpif_, bool terse)
+dpif_netlink_flow_dump_create(const struct dpif *dpif_, bool terse,
+                              char *type)
 {
     const struct dpif_netlink *dpif = dpif_netlink_cast(dpif_);
     struct dpif_netlink_flow_dump *dump;
@@ -1418,16 +1445,20 @@ dpif_netlink_flow_dump_create(const struct dpif *dpif_, bool terse)
     dump = xmalloc(sizeof *dump);
     dpif_flow_dump_init(&dump->up, dpif_);
 
-    dpif_netlink_flow_init(&request);
-    request.cmd = OVS_FLOW_CMD_GET;
-    request.dp_ifindex = dpif->dp_ifindex;
-    request.ufid_present = false;
-    request.ufid_terse = terse;
+    dump->type = dpif_netlink_get_dump_type(type);
 
-    buf = ofpbuf_new(1024);
-    dpif_netlink_flow_to_ofpbuf(&request, buf);
-    nl_dump_start(&dump->nl_dump, NETLINK_GENERIC, buf);
-    ofpbuf_delete(buf);
+    if (dump->type & DUMP_OVS_FLOWS) {
+        dpif_netlink_flow_init(&request);
+        request.cmd = OVS_FLOW_CMD_GET;
+        request.dp_ifindex = dpif->dp_ifindex;
+        request.ufid_present = false;
+        request.ufid_terse = terse;
+
+        buf = ofpbuf_new(1024);
+        dpif_netlink_flow_to_ofpbuf(&request, buf);
+        nl_dump_start(&dump->nl_dump, NETLINK_GENERIC, buf);
+        ofpbuf_delete(buf);
+    }
     atomic_init(&dump->status, 0);
     dump->up.terse = terse;
 
@@ -1440,9 +1471,12 @@ static int
 dpif_netlink_flow_dump_destroy(struct dpif_flow_dump *dump_)
 {
     struct dpif_netlink_flow_dump *dump = dpif_netlink_flow_dump_cast(dump_);
-    unsigned int nl_status = nl_dump_done(&dump->nl_dump);
+    unsigned int nl_status = 0;
     int dump_status;
 
+    if (dump->type & DUMP_OVS_FLOWS) {
+        nl_status = nl_dump_done(&dump->nl_dump);
+    }
     for (int i = 0; i < dump->netdev_dumps_num; i++) {
         int err = netdev_flow_dump_destroy(dump->netdev_dumps[i]);
         if (err != 0 && err != EOPNOTSUPP) {
@@ -1671,6 +1705,10 @@ dpif_netlink_flow_dump_next(struct dpif_flow_dump_thread *thread_,
         } else {
             dpif_netlink_advance_netdev_dump(thread);
         }
+    }
+
+    if (!(dump->type & DUMP_OVS_FLOWS)) {
+        return n_flows;
     }
 
     while (!n_flows
