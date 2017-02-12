@@ -728,7 +728,7 @@ tc_get_flower(int ifindex, int prio, int handle, struct tc_flower *flower)
         return error;
     }
 
-    parse_netlink_to_tc_flower(reply, flower);
+    error = parse_netlink_to_tc_flower(reply, flower);
     ofpbuf_delete(reply);
     return error;
 }
