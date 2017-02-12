@@ -773,9 +773,12 @@ dpctl_dump_flows(int argc, const char *argv[], struct dpctl_params *dpctl_p)
 
     struct dpif_flow_dump_thread *flow_dump_thread;
     struct dpif_flow_dump *flow_dump;
-    struct dpif_flow f;
+    struct dpif_flow flows[50];
+    struct dpif_flow *f;
     int pmd_id = PMD_ID_NULL;
     int lastargc = 0;
+    int count;
+    int i;
     int error;
 
     while (argc > 1 && lastargc != argc) {
@@ -828,43 +831,50 @@ dpctl_dump_flows(int argc, const char *argv[], struct dpctl_params *dpctl_p)
     ds_init(&ds);
     flow_dump = dpif_flow_dump_create(dpif, false, (type ? type : "dpctl"));
     flow_dump_thread = dpif_flow_dump_thread_create(flow_dump);
-    while (dpif_flow_dump_next(flow_dump_thread, &f, 1)) {
-        if (filter) {
-            struct flow flow;
-            struct flow_wildcards wc;
-            struct match match, match_filter;
-            struct minimatch minimatch;
 
-            odp_flow_key_to_flow(f.key, f.key_len, &flow);
-            odp_flow_key_to_mask(f.mask, f.mask_len, &wc, &flow);
-            match_init(&match, &flow, &wc);
+    do {
+        count = dpif_flow_dump_next(flow_dump_thread, flows, 50);
+        for (i = 0; i < count; i++) {
+            f = &flows[i];
 
-            match_init(&match_filter, &flow_filter, &wc);
-            match_init(&match_filter, &match_filter.flow, &wc_filter);
-            minimatch_init(&minimatch, &match_filter);
+            if (filter) {
+                struct flow flow;
+                struct flow_wildcards wc;
+                struct match match, match_filter;
+                struct minimatch minimatch;
 
-            if (!minimatch_matches_flow(&minimatch, &match.flow)) {
+                odp_flow_key_to_flow(f->key, f->key_len, &flow);
+                odp_flow_key_to_mask(f->mask, f->mask_len, &wc, &flow);
+                match_init(&match, &flow, &wc);
+
+                match_init(&match_filter, &flow_filter, &wc);
+                match_init(&match_filter, &match_filter.flow, &wc_filter);
+                minimatch_init(&minimatch, &match_filter);
+
+                if (!minimatch_matches_flow(&minimatch, &match.flow)) {
+                    minimatch_destroy(&minimatch);
+                    continue;
+                }
                 minimatch_destroy(&minimatch);
-                continue;
             }
-            minimatch_destroy(&minimatch);
-        }
-        ds_clear(&ds);
-        /* If 'pmd_id' is specified, overlapping flows could be dumped from
-         * different pmd threads.  So, separates dumps from different pmds
-         * by printing a title line. */
-        if (pmd_id != f.pmd_id) {
-            if (f.pmd_id == NON_PMD_CORE_ID) {
-                ds_put_format(&ds, "flow-dump from non-dpdk interfaces:\n");
-            } else {
-                ds_put_format(&ds, "flow-dump from pmd on cpu core: %d\n",
-                              f.pmd_id);
+            ds_clear(&ds);
+            /* If 'pmd_id' is specified, overlapping flows could be dumped from
+             * different pmd threads.  So, separates dumps from different pmds
+             * by printing a title line. */
+            if (pmd_id != f->pmd_id) {
+                if (f->pmd_id == NON_PMD_CORE_ID) {
+                    ds_put_format(&ds, "flow-dump from non-dpdk interfaces:\n");
+                } else {
+                    ds_put_format(&ds, "flow-dump from pmd on cpu core: %d\n",
+                                  f->pmd_id);
+                }
+                pmd_id = f->pmd_id;
             }
-            pmd_id = f.pmd_id;
+            format_dpif_flow(&ds, f, &portno_names, dpctl_p);
+            dpctl_print(dpctl_p, "%s\n", ds_cstr(&ds));
         }
-        format_dpif_flow(&ds, &f, &portno_names, dpctl_p);
-        dpctl_print(dpctl_p, "%s\n", ds_cstr(&ds));
-    }
+    } while (count > 0);
+
     dpif_flow_dump_thread_destroy(flow_dump_thread);
     error = dpif_flow_dump_destroy(flow_dump);
 
