@@ -696,22 +696,27 @@ tc_del_filter(int ifindex, int prio, int handle)
     struct ofpbuf request;
     struct tcmsg *tcmsg;
     struct ofpbuf *reply;
+    int error;
 
     tcmsg = tc_make_request(ifindex, RTM_DELTFILTER, NLM_F_ECHO, &request);
     tcmsg->tcm_parent = tc_make_handle(0xffff, 0);
     tcmsg->tcm_info = tc_make_handle(prio, 0);
     tcmsg->tcm_handle = handle;
 
-    return tc_transact(&request, &reply);
+    error = tc_transact(&request, &reply);
+    if (!error) {
+        ofpbuf_delete(reply);
+    }
+    return error;
 }
 
 int
 tc_get_flower(int ifindex, int prio, int handle, struct tc_flower *flower)
 {
     struct ofpbuf request;
-    int error = 0;
     struct tcmsg *tcmsg;
     struct ofpbuf *reply;
+    int error;
 
     tcmsg = tc_make_request(ifindex, RTM_GETTFILTER, NLM_F_ECHO, &request);
     tcmsg->tcm_parent = tc_make_handle(0xffff, 0);
@@ -724,6 +729,7 @@ tc_get_flower(int ifindex, int prio, int handle, struct tc_flower *flower)
     }
 
     parse_netlink_to_tc_flower(reply, flower);
+    ofpbuf_delete(reply);
     return error;
 }
 
@@ -1049,6 +1055,7 @@ tc_replace_flower(int ifindex, uint16_t prio, uint32_t handle,
 
         flower->prio = tc_get_major(tc->tcm_info);
         flower->handle = tc->tcm_handle;
+        ofpbuf_delete(reply);
     }
 
     return error;
