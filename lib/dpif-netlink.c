@@ -1663,16 +1663,15 @@ dpif_netlink_flow_dump_next(struct dpif_flow_dump_thread *thread_,
         = dpif_netlink_flow_dump_thread_cast(thread_);
     struct dpif_netlink_flow_dump *dump = thread->dump;
     struct dpif_netlink *dpif = dpif_netlink_cast(thread->up.dpif);
+    int flow_limit = MIN(max_flows, FLOW_DUMP_MAX_BATCH);
     int n_flows;
-    int i = 0;
 
     ofpbuf_delete(thread->nl_actions);
     thread->nl_actions = NULL;
 
     n_flows = 0;
 
-    while (!thread->netdev_done && n_flows < max_flows
-           && i < FLOW_DUMP_MAX_BATCH) {
+    while (!thread->netdev_done && n_flows < flow_limit) {
         struct odputil_keybuf *maskbuf = &thread->maskbuf[n_flows];
         struct odputil_keybuf *keybuf = &thread->keybuf[n_flows];
         struct odputil_keybuf *actbuf = &thread->actbuf[n_flows];
@@ -1713,7 +1712,7 @@ dpif_netlink_flow_dump_next(struct dpif_flow_dump_thread *thread_,
     }
 
     while (!n_flows
-           || (n_flows < max_flows && thread->nl_flows.size)) {
+           || (n_flows < flow_limit && thread->nl_flows.size)) {
         struct dpif_netlink_flow datapath_flow;
         struct ofpbuf nl_flow;
         int error;
