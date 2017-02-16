@@ -2251,7 +2251,7 @@ netdev_ports_flow_dumps_create(const void *obj, int *ports)
         }
     }
 
-    dumps = count ? xzalloc(sizeof(dumps[0]) * count) : NULL;
+    dumps = count ? xzalloc(sizeof *dumps * count) : NULL;
 
     HMAP_FOR_EACH(data, node, &port_to_netdev) {
         if (data->obj == obj) {
