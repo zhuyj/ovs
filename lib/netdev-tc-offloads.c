@@ -778,8 +778,8 @@ netdev_tc_flow_get(struct netdev *netdev OVS_UNUSED,
 
 int
 netdev_tc_flow_del(struct netdev *netdev OVS_UNUSED,
-                   struct dpif_flow_stats *stats OVS_UNUSED,
-                   const ovs_u128 *ufid OVS_UNUSED)
+                   struct dpif_flow_stats *stats,
+                   const ovs_u128 *ufid)
 {
     struct netdev *dev;
     int prio = 0;
