@@ -299,6 +299,8 @@ parse_tc_flower_to_match(struct tc_flower *flower,
         }
     }
 
+    ofpbuf_clear(buf);
+
     match_init_catchall(match);
     match_set_dl_type(match, key->eth_type);
     match_set_dl_src_masked(match, key->src_mac, mask->src_mac);
