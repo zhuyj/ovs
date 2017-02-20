@@ -388,7 +388,6 @@ netdev_tc_flow_dump_next(struct netdev_flow_dump *dump,
                          struct ofpbuf *rbuffer,
                          struct ofpbuf *wbuffer)
 {
-    static struct vlog_rate_limit rl = VLOG_RATE_LIMIT_INIT(5, 20);
     struct ofpbuf nl_flow;
 
     while (nl_dump_next(dump->nl_dump, &nl_flow, rbuffer)) {
@@ -406,16 +405,10 @@ netdev_tc_flow_dump_next(struct netdev_flow_dump *dump,
 
         uf = find_ufid(flower.prio, flower.handle, dump->netdev);
         if (!uf) {
-            VLOG_DBG_RL(&rl, "unmatched flow (dev %s prio %d handle %d)",
-                        netdev_get_name(dump->netdev),
-                        flower.prio, flower.handle);
-            dpif_flow_hash(NULL, &match->flow, sizeof match->flow, ufid);
-            add_ufid_tc_mapping(ufid, flower.prio, flower.handle,
-                                dump->netdev);
-        } else {
-            *ufid = *uf;
+            continue;
         }
 
+        *ufid = *uf;
         match->wc.masks.in_port.odp_port = u32_to_odp(UINT32_MAX);
         match->flow.in_port.odp_port = dump->port;
 
