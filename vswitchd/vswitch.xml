@@ -196,7 +196,7 @@
             This is only relevant if HW offloading is enabled (hw-offload).
         </p>
         <p>
-          The default value is <code>false</code>.
+          The default value is <code>none</code>.
         </p>
       </column>
 
