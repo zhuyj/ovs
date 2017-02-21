@@ -2032,7 +2032,7 @@ parse_flow_put(struct dpif_netlink *dpif, struct dpif_flow_put *put)
             if (outputs > 1) {
                 VLOG_WARN_RL(&rl, "offloading multiple ports isn't supported");
                 err = EOPNOTSUPP;
-                goto err_out;
+                goto out;
             }
 
             out_port = nl_attr_get_odp_port(nla);
@@ -2044,7 +2044,6 @@ parse_flow_put(struct dpif_netlink *dpif, struct dpif_flow_put *put)
             netdev_close(outdev);
         }
     }
-
 
     info.port_hmap_obj = DPIF_HMAP_KEY(&dpif->dpif);
     info.tp_dst_port = dst_port;
@@ -2077,8 +2076,7 @@ parse_flow_put(struct dpif_netlink *dpif, struct dpif_flow_put *put)
         VLOG_ERR_RL(&rl, "failed adding flow: %s", ovs_strerror(err));
     }
 
-err_out:
-
+out:
     return err;
 }
 
