@@ -2030,7 +2030,7 @@ parse_flow_put(struct dpif_netlink *dpif, struct dpif_flow_put *put)
 
             outputs++;
             if (outputs > 1) {
-                VLOG_WARN_RL(&rl, "offloading multiple ports isn't supported");
+                VLOG_DBG_RL(&rl, "offloading multiple ports isn't supported");
                 err = EOPNOTSUPP;
                 goto out;
             }
