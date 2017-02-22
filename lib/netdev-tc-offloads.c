@@ -741,7 +741,7 @@ netdev_tc_flow_put(struct netdev *netdev,
 
     err = tc_replace_flower(ifindex, prio, handle, &flower);
     if (!err) {
-        add_ufid_tc_mapping(ufid, flower.prio, flower.handle, netdev);
+        add_ufid_tc_mapping(ufid, flower.prio, flower.handle, netdev, ifindex);
     }
 
     return err;
