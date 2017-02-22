@@ -402,6 +402,8 @@ extern "C" {
 
 #define DPIF_HMAP_KEY(x) ((x)->dpif_class)
 
+extern bool in_dpctl;
+
 struct dpif;
 struct dpif_class;
 struct dpif_flow;
