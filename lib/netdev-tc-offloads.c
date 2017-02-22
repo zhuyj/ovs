@@ -433,7 +433,11 @@ netdev_tc_flow_dump_next(struct netdev_flow_dump *dump,
         }
 
         if (!find_ufid(flower.prio, flower.handle, dump->netdev, &uf)) {
-            continue;
+            if (in_dpctl) {
+                memset(&uf, 0, sizeof(uf));
+            } else {
+                continue;
+            }
         }
 
         *ufid = uf;
