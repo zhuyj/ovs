@@ -825,6 +825,8 @@ dpctl_dump_flows(int argc, const char *argv[], struct dpctl_params *dpctl_p)
      * in the userspace datapath */
     BUILD_ASSERT(PMD_ID_NULL != NON_PMD_CORE_ID);
 
+    in_dpctl = true;
+
     ds_init(&ds);
     flow_dump = dpif_flow_dump_create(dpif, false, (type ? type : "dpctl"));
     flow_dump_thread = dpif_flow_dump_thread_create(flow_dump);
