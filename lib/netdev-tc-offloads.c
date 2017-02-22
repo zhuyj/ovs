@@ -79,6 +79,7 @@ VLOG_DEFINE_THIS_MODULE(netdev_tc_offloads);
 static struct vlog_rate_limit rl_err = VLOG_RATE_LIMIT_INIT(9999, 5);
 
 static struct hmap ufid_to_tc = HMAP_INITIALIZER(&ufid_to_tc);
+static struct hmap tc_to_ufid = HMAP_INITIALIZER(&tc_to_ufid);
 static struct ovs_mutex ufid_lock = OVS_MUTEX_INITIALIZER;
 
 struct ufid_to_tc_data {
@@ -86,18 +87,20 @@ struct ufid_to_tc_data {
     ovs_u128 ufid;
     uint16_t prio;
     uint32_t handle;
+    int ifindex;
     struct netdev *netdev;
 };
 
-/* Remove ufid from ufid_tc hashmap.
- *
- * Returns true if successful.
- */
-static bool
+/* Remove ufid from ufid_to_tc and matching entry from tc_to_ufid hashmap. */
+static void
 del_ufid_tc_mapping(const ovs_u128 *ufid)
 {
     size_t hash = hash_bytes(ufid, sizeof *ufid, 0);
-    struct ufid_to_tc_data *data = NULL;
+    struct ufid_to_tc_data *data;
+    uint16_t prio;
+    uint32_t handle;
+    int ifindex;
+    size_t hash2;
 
     ovs_mutex_lock(&ufid_lock);
     HMAP_FOR_EACH_WITH_HASH(data, node, hash, &ufid_to_tc) {
@@ -105,40 +108,63 @@ del_ufid_tc_mapping(const ovs_u128 *ufid)
             break;
         }
     }
-    if (data) {
-        hmap_remove(&ufid_to_tc, &data->node);
+
+    if (!data) {
         ovs_mutex_unlock(&ufid_lock);
+        return;
+    }
+
+    /* remove from ufid_to_tc map and get info to remove tc_to_ufid map */
+    hmap_remove(&ufid_to_tc, &data->node);
+    netdev_close(data->netdev);
+    prio = data->prio;
+    handle = data->handle;
+    ifindex = data->ifindex;
+    hash2 = hash_int(hash_int(prio, handle), ifindex);
+    free(data);
+
+    HMAP_FOR_EACH_WITH_HASH(data, node, hash2, &tc_to_ufid) {
+        if (data->prio == prio && data->handle == handle && data->ifindex == ifindex) {
+            break;
+        }
+    }
+    if (data) {
+        hmap_remove(&tc_to_ufid, &data->node);
         netdev_close(data->netdev);
         free(data);
-        return true;
     }
     ovs_mutex_unlock(&ufid_lock);
-    return false;
 }
 
-/* Add ufid to ufid_tc hashmap.
- * If ufid already exists it will be replaced.
- *
- * Returns true if successful.
- */
-static bool
+/* Add ufid to ufid_tc hashmap and prio/handle/ifindex to tc_ufid hashmap.
+ * If those exists already they will be replaced. */
+static void
 add_ufid_tc_mapping(const ovs_u128 *ufid, int prio, int handle,
-                    struct netdev *netdev)
+                    struct netdev *netdev, int ifindex)
 {
     size_t hash = hash_bytes(ufid, sizeof *ufid, 0);
-    bool replace = del_ufid_tc_mapping(ufid);
+    size_t hash2 = hash_int(hash_int(prio, handle), ifindex);
     struct ufid_to_tc_data *new_data = xzalloc(sizeof *new_data);
+    struct ufid_to_tc_data *new_data2 = xzalloc(sizeof *new_data2);
+
+    del_ufid_tc_mapping(ufid);
 
     new_data->ufid = *ufid;
     new_data->prio = prio;
     new_data->handle = handle;
     new_data->netdev = netdev_ref(netdev);
+    new_data->ifindex = ifindex;
+
+    new_data2->ufid = *ufid;
+    new_data2->prio = prio;
+    new_data2->handle = handle;
+    new_data2->netdev = netdev_ref(netdev);
+    new_data2->ifindex = ifindex;
 
     ovs_mutex_lock(&ufid_lock);
     hmap_insert(&ufid_to_tc, &new_data->node, hash);
+    hmap_insert(&tc_to_ufid, &new_data2->node, hash2);
     ovs_mutex_unlock(&ufid_lock);
-
-    return replace;
 }
 
 /* Get ufid from ufid_tc hashmap.
@@ -150,49 +176,50 @@ static int
 get_ufid_tc_mapping(const ovs_u128 *ufid, int *prio, struct netdev **netdev)
 {
     size_t hash = hash_bytes(ufid, sizeof *ufid, 0);
-    struct ufid_to_tc_data *data = NULL;
+    struct ufid_to_tc_data *data;
+    int handle = 0;
 
     ovs_mutex_lock(&ufid_lock);
     HMAP_FOR_EACH_WITH_HASH(data, node, hash, &ufid_to_tc) {
         if (ovs_u128_equals(*ufid, data->ufid)) {
+            if (prio) {
+                *prio = data->prio;
+            }
+            if (netdev) {
+                *netdev = netdev_ref(data->netdev);
+            }
+            handle = data->handle;
             break;
         }
     }
     ovs_mutex_unlock(&ufid_lock);
-    if (data) {
-        if (prio) {
-            *prio = data->prio;
-        }
-        if (netdev) {
-            *netdev = netdev_ref(data->netdev);
-        }
-        return data->handle;
-    }
-    return 0;
+
+    return handle;
 }
 
-/* Find ufid in ufid_tc hashmap from prio, handle and netdev.
+/* Find ufid in tc_to_ufid hashmap using prio, handle and netdev.
+ * The result is saved in ufid.
  *
- * Returns ufid if successful or NULL.
+ * Returns true on success.
  */
-static ovs_u128 *
-find_ufid(int prio, int handle, struct netdev *netdev)
+static bool
+find_ufid(int prio, int handle, struct netdev *netdev, ovs_u128 *ufid)
 {
     int ifindex = netdev_get_ifindex(netdev);
-    struct ufid_to_tc_data *data = NULL;
+    struct ufid_to_tc_data *data;
+    size_t hash2 = hash_int(hash_int(prio, handle), ifindex);
 
     ovs_mutex_lock(&ufid_lock);
-    HMAP_FOR_EACH(data, node, &ufid_to_tc) {
+    HMAP_FOR_EACH_WITH_HASH(data, node, hash2,  &tc_to_ufid) {
         if (data->prio == prio && data->handle == handle
-            && netdev_get_ifindex(data->netdev) == ifindex) {
+            && data->ifindex == ifindex) {
+            *ufid = data->ufid;
             break;
         }
     }
     ovs_mutex_unlock(&ufid_lock);
-    if (data) {
-        return &data->ufid;
-    }
-    return NULL;
+
+    return (data != NULL);
 }
 
 struct prio_map_data {
