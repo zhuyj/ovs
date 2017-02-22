@@ -462,7 +462,11 @@ netdev_tc_flow_dump_next(struct netdev_flow_dump *dump,
         if (flower.act_cookie.len) {
             *ufid = *((ovs_u128 *) flower.act_cookie.data);
         } else if (!find_ufid(flower.prio, flower.handle, netdev, ufid)) {
-            continue;
+            if (in_dpctl) {
+                memset(ufid, 0, sizeof *ufid);
+            } else {
+                continue;
+            }
         }
 
         match->wc.masks.in_port.odp_port = u32_to_odp(UINT32_MAX);
