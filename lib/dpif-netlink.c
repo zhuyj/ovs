@@ -2021,6 +2021,11 @@ parse_flow_put(struct dpif_netlink *dpif, struct dpif_flow_put *put)
         return err;
     }
 
+    /* When we try to install a dummy flow from a probed feature. */
+    if (match.flow.dl_type == htons(0x1234)) {
+        return EOPNOTSUPP;
+    }
+
     /* Get tunnel dst port and count outputs */
     NL_ATTR_FOR_EACH(nla, left, put->actions, put->actions_len) {
         if (nl_attr_type(nla) == OVS_ACTION_ATTR_OUTPUT) {
@@ -2037,6 +2042,10 @@ parse_flow_put(struct dpif_netlink *dpif, struct dpif_flow_put *put)
 
             out_port = nl_attr_get_odp_port(nla);
             outdev = netdev_hmap_port_get(out_port, DPIF_HMAP_KEY(&dpif->dpif));
+            if (!outdev) {
+                err = EOPNOTSUPP;
+                goto out;
+            }
             tnl_cfg = netdev_get_tunnel_config(outdev);
             if (tnl_cfg && tnl_cfg->dst_port != 0) {
                 dst_port = tnl_cfg->dst_port;
@@ -2049,6 +2058,10 @@ parse_flow_put(struct dpif_netlink *dpif, struct dpif_flow_put *put)
     info.tp_dst_port = dst_port;
     in_port = match.flow.in_port.odp_port;
     dev = netdev_hmap_port_get(in_port, DPIF_HMAP_KEY(&dpif->dpif));
+    if (!dev) {
+        err = EOPNOTSUPP;
+        goto out;
+    }
     err = netdev_flow_put(dev, &match,
                           CONST_CAST(struct nlattr *, put->actions),
                           put->actions_len, put->stats,
