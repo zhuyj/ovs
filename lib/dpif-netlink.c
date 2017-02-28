@@ -2090,6 +2090,28 @@ parse_flow_put(struct dpif_netlink *dpif, struct dpif_flow_put *put)
     }
 
 out:
+    if (err && err != EEXIST && (put->flags & DPIF_FP_MODIFY)) {
+        /* Modified rule can't be offloaded, try and delete from HW */
+        int del_err = netdev_ports_flow_del(DPIF_HMAP_KEY(&dpif->dpif),
+                                            put->ufid, put->stats);
+
+        if (!del_err) {
+            /* Delete from hw success, so old flow was offloaded.
+             * Change flags to create the flow in kernel */
+            put->flags &= ~DPIF_FP_MODIFY;
+            put->flags |= DPIF_FP_CREATE;
+
+            return err;
+        }
+
+        if (del_err != ENOENT) {
+            VLOG_ERR_RL(&rl, "failed to delete offloaded flow: %s",
+                        ovs_strerror(del_err));
+            /* stop proccesing the flow in kernel */
+            return 0;
+        }
+    }
+
     return err;
 }
 
@@ -2130,7 +2152,8 @@ try_send_to_netdev(struct dpif_netlink *dpif, struct dpif_op *op)
             break;
         }
         dbg_print_flow(put->key, put->key_len, put->mask, put->mask_len,
-                       put->actions, put->actions_len, put->ufid, "PUT");
+                       put->actions, put->actions_len, put->ufid,
+                       (put->flags & DPIF_FP_MODIFY ? "PUT(MODIFY)" : "PUT"));
         return parse_flow_put(dpif, put);
     }
     case DPIF_OP_FLOW_DEL: {
