@@ -2302,10 +2302,10 @@ netdev_ports_flow_get(const void *obj, struct match *match,
 
 bool netdev_flow_api_enabled = false;
 
+#ifdef __linux__
 void
 netdev_set_flow_api_enabled(const struct smap *ovs_other_config)
 {
-#ifdef __linux__
     if (smap_get_bool(ovs_other_config, "hw-offload", false)) {
         static struct ovsthread_once once = OVSTHREAD_ONCE_INITIALIZER;
 
@@ -2320,7 +2320,11 @@ netdev_set_flow_api_enabled(const struct smap *ovs_other_config)
             ovsthread_once_done(&once);
         }
     }
-#else
-    netdev_flow_api_enabled = false;
-#endif
 }
+#else
+void
+netdev_set_flow_api_enabled(const struct smap *ovs_other_config OVS_UNUSED)
+{
+    netdev_flow_api_enabled = false;
+}
+#endif
