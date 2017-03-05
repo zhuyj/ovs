@@ -508,6 +508,7 @@ nl_parse_act_vlan(struct nlattr *options, struct tc_flower *flower)
 
 static const struct nl_policy act_policy[] = {
     [TCA_ACT_KIND] = { .type = NL_A_STRING, .optional = false, },
+    [TCA_ACT_COOKIE] = { .type = NL_A_UNSPEC, .optional = true, },
     [TCA_ACT_OPTIONS] = { .type = NL_A_NESTED, .optional = false, },
     [TCA_ACT_STATS] = { .type = NL_A_NESTED, .optional = false, },
 };
@@ -523,6 +524,7 @@ nl_parse_single_action(struct nlattr *action, struct tc_flower *flower)
 {
     struct nlattr *act_options;
     struct nlattr *act_stats;
+    struct nlattr *act_cookie;
     const struct nlattr *stats_basic;
     const char *act_kind;
     struct nlattr *action_attrs[ARRAY_SIZE(act_policy)];
@@ -538,6 +540,7 @@ nl_parse_single_action(struct nlattr *action, struct tc_flower *flower)
 
     act_kind = nl_attr_get_string(action_attrs[TCA_ACT_KIND]);
     act_options = action_attrs[TCA_ACT_OPTIONS];
+    act_cookie = action_attrs[TCA_ACT_COOKIE];
 
     if (!strcmp(act_kind, "gact")) {
         nl_parse_act_drop(act_options, flower);
@@ -550,6 +553,11 @@ nl_parse_single_action(struct nlattr *action, struct tc_flower *flower)
     } else {
         VLOG_ERR_RL(&parse_err, "unknown tc action kind: %s", act_kind);
         return EINVAL;
+    }
+
+    if (act_cookie) {
+        flower->act_cookie.data = nl_attr_get(act_cookie);
+        flower->act_cookie.len = nl_attr_get_size(act_cookie);
     }
 
     act_stats = action_attrs[TCA_ACT_STATS];
@@ -851,6 +859,13 @@ nl_msg_put_act_redirect(struct ofpbuf *request, int ifindex)
     nl_msg_end_nested(request, offset);
 }
 
+static inline void
+nl_msg_put_act_cookie(struct ofpbuf *request, struct tc_cookie *ck) {
+    if (ck->len) {
+        nl_msg_put_unspec(request, TCA_ACT_COOKIE, ck->data, ck->len);
+    }
+}
+
 static void
 nl_msg_put_flower_acts(struct ofpbuf *request, struct tc_flower *flower)
 {
@@ -889,10 +904,12 @@ nl_msg_put_flower_acts(struct ofpbuf *request, struct tc_flower *flower)
         if (flower->ifindex_out) {
             act_offset = nl_msg_start_nested(request, act_index++);
             nl_msg_put_act_redirect(request, flower->ifindex_out);
+            nl_msg_put_act_cookie(request, &flower->act_cookie);
             nl_msg_end_nested(request, act_offset);
         } else {
             act_offset = nl_msg_start_nested(request, act_index++);
             nl_msg_put_act_drop(request);
+            nl_msg_put_act_cookie(request, &flower->act_cookie);
             nl_msg_end_nested(request, act_offset);
         }
     }

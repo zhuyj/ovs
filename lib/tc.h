@@ -32,6 +32,11 @@ struct tcmsg *tc_make_request(int ifindex, int type, unsigned int flags,
 int tc_transact(struct ofpbuf *request, struct ofpbuf **replyp);
 int tc_add_del_ingress_qdisc(int ifindex, bool add);
 
+struct tc_cookie {
+    const void *data;
+    size_t len;
+};
+
 struct tc_flower_key {
     ovs_be16 eth_type;
     uint8_t ip_proto;
@@ -104,6 +109,8 @@ struct tc_flower {
         ovs_be16 tp_src;
         ovs_be16 tp_dst;
     } tunnel;
+
+    struct tc_cookie act_cookie;
 };
 
 int tc_replace_flower(int ifindex, uint16_t prio, uint32_t handle,
