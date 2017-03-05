@@ -752,6 +752,9 @@ netdev_tc_flow_put(struct netdev *netdev,
         prio = get_prio_for_tc_flower(&flower);
     }
 
+    flower.act_cookie.data = ufid;
+    flower.act_cookie.len = sizeof *ufid;
+
     err = tc_replace_flower(ifindex, prio, handle, &flower);
     if (!err) {
         add_ufid_tc_mapping(ufid, flower.prio, flower.handle, netdev, ifindex);
