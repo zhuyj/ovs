@@ -428,7 +428,7 @@ netdev_tc_flow_dump_next(struct netdev_flow_dump *dump,
 
     while (nl_dump_next(dump->nl_dump, &nl_flow, rbuffer)) {
         struct tc_flower flower;
-        ovs_u128 uf;
+        struct netdev *netdev = dump->netdev;
 
         if (parse_netlink_to_tc_flower(&nl_flow, &flower)) {
             continue;
@@ -439,11 +439,12 @@ netdev_tc_flow_dump_next(struct netdev_flow_dump *dump,
             continue;
         }
 
-        if (!find_ufid(flower.prio, flower.handle, dump->netdev, &uf)) {
+        if (flower.act_cookie.len) {
+            *ufid = *((ovs_u128 *) flower.act_cookie.data);
+        } else if (!find_ufid(flower.prio, flower.handle, netdev, ufid)) {
             continue;
         }
 
-        *ufid = uf;
         match->wc.masks.in_port.odp_port = u32_to_odp(UINT32_MAX);
         match->flow.in_port.odp_port = dump->port;
 
