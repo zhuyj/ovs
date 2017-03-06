@@ -733,6 +733,7 @@ netdev_tc_flow_put(struct netdev *netdev,
     handle = get_ufid_tc_mapping(ufid, &prio, NULL);
     if (handle && prio) {
         VLOG_DBG_RL(&rl, "updating old handle: %d prio: %d", handle, prio);
+        tc_del_filter(ifindex, prio, handle);
     }
 
     if (!prio) {
