@@ -1,7 +1,7 @@
 #ifndef __LINUX_PKT_CLS_WRAPPER_H
 #define __LINUX_PKT_CLS_WRAPPER_H 1
 
-#if defined(__KERNEL__) || defined(HAVE_TCA_FLOWER_KEY_ENC_UDP_DST_PORT)
+#if defined(__KERNEL__) || defined(HAVE_TCA_ACT_COOKIE)
 #include_next <linux/pkt_cls.h>
 #else
 
@@ -160,6 +160,6 @@ enum {
 	__TCA_FLOWER_MAX,
 };
 
-#endif /* __KERNEL__ || !HAVE_TCA_FLOWER_KEY_ENC_UDP_DST_PORT */
+#endif /* __KERNEL__ || !HAVE_TCA_ACT_COOKIE */
 
 #endif /* __LINUX_PKT_CLS_WRAPPER_H */

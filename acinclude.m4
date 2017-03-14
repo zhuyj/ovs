@@ -161,10 +161,10 @@ dnl Configure Linux tc compat.
 AC_DEFUN([OVS_CHECK_LINUX_TC], [
   AC_COMPILE_IFELSE([
     AC_LANG_PROGRAM([#include <linux/pkt_cls.h>], [
-        int x = TCA_FLOWER_KEY_ENC_UDP_DST_PORT;
+        int x = TCA_ACT_COOKIE;
     ])],
-    [AC_DEFINE([HAVE_TCA_FLOWER_KEY_ENC_UDP_DST_PORT], [1],
-               [Define to 1 if TCA_FLOWER_KEY_ENC_UDP_DST_PORT is avaiable.])])
+    [AC_DEFINE([HAVE_TCA_ACT_COOKIE], [1],
+               [Define to 1 if TCA_ACT_COOKIE is avaiable.])])
 
   AC_COMPILE_IFELSE([
     AC_LANG_PROGRAM([#include <linux/tc_act/tc_vlan.h>], [
