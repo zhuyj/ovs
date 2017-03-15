@@ -477,11 +477,21 @@ parse_put_flow_set_action(struct tc_flower *flower, const struct nlattr *set,
                 }
                 break;
                 case OVS_TUNNEL_KEY_ATTR_IPV4_SRC: {
-                    flower->set.ipv4_src = nl_attr_get_be32(tun_attr);
+                    flower->set.ipv4.ipv4_src = nl_attr_get_be32(tun_attr);
                 }
                 break;
                 case OVS_TUNNEL_KEY_ATTR_IPV4_DST: {
-                    flower->set.ipv4_dst = nl_attr_get_be32(tun_attr);
+                    flower->set.ipv4.ipv4_dst = nl_attr_get_be32(tun_attr);
+                }
+                break;
+                case OVS_TUNNEL_KEY_ATTR_IPV6_SRC: {
+                    flower->set.ipv6.ipv6_src =
+                        nl_attr_get_in6_addr(tun_attr);
+                }
+                break;
+                case OVS_TUNNEL_KEY_ATTR_IPV6_DST: {
+                    flower->set.ipv6.ipv6_dst =
+                        nl_attr_get_in6_addr(tun_attr);
                 }
                 break;
                 case OVS_TUNNEL_KEY_ATTR_TP_SRC: {
@@ -647,8 +657,10 @@ netdev_tc_flow_put(struct netdev *netdev,
                     IP_ARGS(tnl->ip_src), IP_ARGS(tnl->ip_dst),
                     ntohs(tnl->tp_src), ntohs(tnl->tp_dst));
         flower.tunnel.id = tnl->tun_id;
-        flower.tunnel.ipv4_src = tnl->ip_src;
-        flower.tunnel.ipv4_dst = tnl->ip_dst;
+        flower.tunnel.ipv4.ipv4_src = tnl->ip_src;
+        flower.tunnel.ipv4.ipv4_dst = tnl->ip_dst;
+        flower.tunnel.ipv6.ipv6_src = tnl->ipv6_src;
+        flower.tunnel.ipv6.ipv6_dst = tnl->ipv6_dst;
         flower.tunnel.tp_src = tnl->tp_src;
         flower.tunnel.tp_dst = tnl->tp_dst;
         flower.tunnel.tunnel = true;
@@ -700,10 +712,10 @@ netdev_tc_flow_put(struct netdev *netdev,
     flower.key.ipv4.ipv4_dst = key->nw_dst;
     flower.mask.ipv4.ipv4_dst = mask->nw_dst;
 
-    memcpy(flower.key.ipv6.ipv6_src, &key->ipv6_src, sizeof key->ipv6_src);
-    memcpy(flower.mask.ipv6.ipv6_src, &mask->ipv6_src, sizeof mask->ipv6_src);
-    memcpy(flower.key.ipv6.ipv6_dst, &key->ipv6_dst, sizeof key->ipv6_dst);
-    memcpy(flower.mask.ipv6.ipv6_dst, &mask->ipv6_dst, sizeof mask->ipv6_dst);
+    flower.key.ipv6.ipv6_src = key->ipv6_src;
+    flower.mask.ipv6.ipv6_src = mask->ipv6_src;
+    flower.key.ipv6.ipv6_dst = key->ipv6_dst;
+    flower.mask.ipv6.ipv6_dst = mask->ipv6_dst;
 
     flower.key.dst_port = key->tp_dst;
     flower.mask.dst_port = mask->tp_dst;
