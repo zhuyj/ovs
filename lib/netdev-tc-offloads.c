@@ -343,23 +343,28 @@ parse_tc_flower_to_match(struct tc_flower *flower,
          || key->eth_type == htons(ETH_P_IPV6))) {
         match_set_nw_proto(match, key->ip_proto);
     }
+
     match_set_nw_src_masked(match, key->ipv4.ipv4_src, mask->ipv4.ipv4_src);
     match_set_nw_dst_masked(match, key->ipv4.ipv4_dst, mask->ipv4.ipv4_dst);
 
     match_set_ipv6_src_masked(match,
-                              (const struct in6_addr *) key->ipv6.ipv6_src,
-                              (const struct in6_addr *) mask->ipv6.ipv6_src);
+                              &key->ipv6.ipv6_src, &mask->ipv6.ipv6_src);
     match_set_ipv6_dst_masked(match,
-                              (const struct in6_addr *) key->ipv6.ipv6_dst,
-                              (const struct in6_addr *) mask->ipv6.ipv6_dst);
+                              &key->ipv6.ipv6_dst, &mask->ipv6.ipv6_dst);
 
     match_set_tp_dst_masked(match, key->dst_port, mask->dst_port);
     match_set_tp_src_masked(match, key->src_port, mask->src_port);
 
     if (flower->tunnel.tunnel) {
         match_set_tun_id(match, flower->tunnel.id);
-        match_set_tun_src(match, flower->tunnel.ipv4_src);
-        match_set_tun_dst(match, flower->tunnel.ipv4_dst);
+        if (flower->tunnel.ipv4.ipv4_dst) {
+            match_set_tun_src(match, flower->tunnel.ipv4.ipv4_src);
+            match_set_tun_dst(match, flower->tunnel.ipv4.ipv4_dst);
+        } else if (!is_all_zeros(&flower->tunnel.ipv6.ipv6_dst,
+                   sizeof flower->tunnel.ipv6.ipv6_dst)) {
+            match_set_tun_ipv6_src(match, &flower->tunnel.ipv6.ipv6_src);
+            match_set_tun_ipv6_dst(match, &flower->tunnel.ipv6.ipv6_dst);
+        }
         match_set_tp_dst(match, flower->tunnel.tp_dst);
     }
 
@@ -390,10 +395,24 @@ parse_tc_flower_to_match(struct tc_flower *flower,
                 nl_msg_start_nested(buf, OVS_KEY_ATTR_TUNNEL);
 
             nl_msg_put_be64(buf, OVS_TUNNEL_KEY_ATTR_ID, flower->set.id);
-            nl_msg_put_be32(buf, OVS_TUNNEL_KEY_ATTR_IPV4_SRC,
-                            flower->set.ipv4_src);
-            nl_msg_put_be32(buf, OVS_TUNNEL_KEY_ATTR_IPV4_DST,
-                            flower->set.ipv4_dst);
+            if (flower->set.ipv4.ipv4_src) {
+                nl_msg_put_be32(buf, OVS_TUNNEL_KEY_ATTR_IPV4_SRC,
+                                flower->set.ipv4.ipv4_src);
+            }
+            if (flower->set.ipv4.ipv4_dst) {
+                nl_msg_put_be32(buf, OVS_TUNNEL_KEY_ATTR_IPV4_DST,
+                                flower->set.ipv4.ipv4_dst);
+            }
+            if (!is_all_zeros(&flower->set.ipv6.ipv6_src,
+                              sizeof flower->set.ipv6.ipv6_src)) {
+                nl_msg_put_in6_addr(buf, OVS_TUNNEL_KEY_ATTR_IPV6_SRC,
+                                    &flower->set.ipv6.ipv6_src);
+            }
+            if (!is_all_zeros(&flower->set.ipv6.ipv6_dst,
+                              sizeof flower->set.ipv6.ipv6_dst)) {
+                nl_msg_put_in6_addr(buf, OVS_TUNNEL_KEY_ATTR_IPV6_DST,
+                                    &flower->set.ipv6.ipv6_dst);
+            }
             nl_msg_put_be16(buf, OVS_TUNNEL_KEY_ATTR_TP_DST,
                             flower->set.tp_dst);
 
