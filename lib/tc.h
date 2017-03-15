@@ -51,17 +51,6 @@ struct tc_flower_key {
     uint8_t vlan_prio;
 
     ovs_be16 encap_eth_type;
-    uint8_t encap_ip_proto;
-    union {
-        struct {
-            ovs_be32 ipv4_src;
-            ovs_be32 ipv4_dst;
-        } encap_ipv4;
-        struct {
-            ovs_be32 ipv6_src[4];
-            ovs_be32 ipv6_dst[4];
-        } encap_ipv6;
-    };
 
     union {
         struct {
@@ -69,8 +58,8 @@ struct tc_flower_key {
             ovs_be32 ipv4_dst;
         } ipv4;
         struct {
-            ovs_be32 ipv6_src[4];
-            ovs_be32 ipv6_dst[4];
+            struct in6_addr ipv6_src;
+            struct in6_addr ipv6_dst;
         } ipv6;
     };
 };
@@ -94,17 +83,29 @@ struct tc_flower {
 
     struct {
         bool set;
-        ovs_be32 ipv4_src;
-        ovs_be32 ipv4_dst;
         ovs_be64 id;
         ovs_be16 tp_src;
         ovs_be16 tp_dst;
+        struct {
+            ovs_be32 ipv4_src;
+            ovs_be32 ipv4_dst;
+        } ipv4;
+        struct {
+            struct in6_addr ipv6_src;
+            struct in6_addr ipv6_dst;
+        } ipv6;
     } set;
 
     struct {
         bool tunnel;
-        ovs_be32 ipv4_src;
-        ovs_be32 ipv4_dst;
+        struct {
+            ovs_be32 ipv4_src;
+            ovs_be32 ipv4_dst;
+        } ipv4;
+        struct {
+            struct in6_addr ipv6_src;
+            struct in6_addr ipv6_dst;
+        } ipv6;
         ovs_be64 id;
         ovs_be16 tp_src;
         ovs_be16 tp_dst;
