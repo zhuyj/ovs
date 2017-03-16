@@ -385,10 +385,6 @@ parse_tc_flower_to_match(struct tc_flower *flower,
                                    | VLAN_CFI);
         }
 
-        if (flower->ifindex_out > 0) {
-            nl_msg_put_u32(buf, OVS_ACTION_ATTR_OUTPUT, odp_to_u32(outport));
-        }
-
         if (flower->set.set) {
             size_t set_offset = nl_msg_start_nested(buf, OVS_ACTION_ATTR_SET);
             size_t tunnel_offset =
@@ -419,6 +415,11 @@ parse_tc_flower_to_match(struct tc_flower *flower,
             nl_msg_end_nested(buf, tunnel_offset);
             nl_msg_end_nested(buf, set_offset);
         }
+
+        if (flower->ifindex_out > 0) {
+            nl_msg_put_u32(buf, OVS_ACTION_ATTR_OUTPUT, odp_to_u32(outport));
+        }
+
     }
     nl_msg_end_nested(buf, act_off);
 
