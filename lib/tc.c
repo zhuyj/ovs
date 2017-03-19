@@ -983,10 +983,13 @@ nl_msg_put_flower_tunnel(struct ofpbuf *request, struct tc_flower *flower)
     ovs_be32 id = be64_to_be32(flower->tunnel.id);
 
     nl_msg_put_be32(request, TCA_FLOWER_KEY_ENC_KEY_ID, id);
-    nl_msg_put_be32(request, TCA_FLOWER_KEY_ENC_IPV4_SRC, ipv4_src);
-    nl_msg_put_be32(request, TCA_FLOWER_KEY_ENC_IPV4_DST, ipv4_dst);
-    nl_msg_put_in6_addr(request, TCA_FLOWER_KEY_ENC_IPV6_SRC, ipv6_src);
-    nl_msg_put_in6_addr(request, TCA_FLOWER_KEY_ENC_IPV6_DST, ipv6_dst);
+    if (ipv4_dst) {
+        nl_msg_put_be32(request, TCA_FLOWER_KEY_ENC_IPV4_SRC, ipv4_src);
+        nl_msg_put_be32(request, TCA_FLOWER_KEY_ENC_IPV4_DST, ipv4_dst);
+    } else if (!is_all_zeros(ipv6_dst, sizeof *ipv6_dst)) {
+        nl_msg_put_in6_addr(request, TCA_FLOWER_KEY_ENC_IPV6_SRC, ipv6_src);
+        nl_msg_put_in6_addr(request, TCA_FLOWER_KEY_ENC_IPV6_DST, ipv6_dst);
+    }
     nl_msg_put_be16(request, TCA_FLOWER_KEY_ENC_UDP_DST_PORT, tp_dst);
 }
 
