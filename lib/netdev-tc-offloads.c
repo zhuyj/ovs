@@ -731,15 +731,18 @@ netdev_tc_flow_put(struct netdev *netdev,
         flower.key.ip_proto = key->nw_proto;
         flower.mask.ip_proto = mask->nw_proto;
     }
-    flower.key.ipv4.ipv4_src = key->nw_src;
-    flower.mask.ipv4.ipv4_src = mask->nw_src;
-    flower.key.ipv4.ipv4_dst = key->nw_dst;
-    flower.mask.ipv4.ipv4_dst = mask->nw_dst;
 
-    flower.key.ipv6.ipv6_src = key->ipv6_src;
-    flower.mask.ipv6.ipv6_src = mask->ipv6_src;
-    flower.key.ipv6.ipv6_dst = key->ipv6_dst;
-    flower.mask.ipv6.ipv6_dst = mask->ipv6_dst;
+    if (flower.key.eth_type == htons(ETH_P_IP)) {
+        flower.key.ipv4.ipv4_src = key->nw_src;
+        flower.mask.ipv4.ipv4_src = mask->nw_src;
+        flower.key.ipv4.ipv4_dst = key->nw_dst;
+        flower.mask.ipv4.ipv4_dst = mask->nw_dst;
+    } else if (flower.key.eth_type == htons(ETH_P_IPV6)) {
+        flower.key.ipv6.ipv6_src = key->ipv6_src;
+        flower.mask.ipv6.ipv6_src = mask->ipv6_src;
+        flower.key.ipv6.ipv6_dst = key->ipv6_dst;
+        flower.mask.ipv6.ipv6_dst = mask->ipv6_dst;
+    }
 
     flower.key.dst_port = key->tp_dst;
     flower.mask.dst_port = mask->tp_dst;
