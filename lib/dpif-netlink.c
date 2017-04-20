@@ -2113,35 +2113,11 @@ out:
     return err;
 }
 
-static void
-dbg_print_flow(const struct nlattr *key, size_t key_len,
-               const struct nlattr *mask, size_t mask_len,
-               const struct nlattr *actions, size_t actions_len,
-               const ovs_u128 *ufid,
-               const char *op)
-{
-        struct ds s;
-
-        ds_init(&s);
-        ds_put_cstr(&s, op);
-        ds_put_cstr(&s, " (");
-        odp_format_ufid(ufid, &s);
-        ds_put_cstr(&s, ")");
-        if (key_len) {
-            ds_put_cstr(&s, "\nflow (verbose): ");
-            odp_flow_format(key, key_len, mask, mask_len, NULL, &s, true);
-            ds_put_cstr(&s, "\nflow: ");
-            odp_flow_format(key, key_len, mask, mask_len, NULL, &s, false);
-        }
-        ds_put_cstr(&s, "\nactions: ");
-        format_odp_actions(&s, actions, actions_len);
-        VLOG_DBG("\n%s", ds_cstr(&s));
-        ds_destroy(&s);
-}
-
 static int
 try_send_to_netdev(struct dpif_netlink *dpif, struct dpif_op *op)
 {
+    int err = EOPNOTSUPP;
+
     switch (op->type) {
     case DPIF_OP_FLOW_PUT: {
         struct dpif_flow_put *put = &op->u.flow_put;
@@ -2149,10 +2125,10 @@ try_send_to_netdev(struct dpif_netlink *dpif, struct dpif_op *op)
         if (!put->ufid) {
             break;
         }
-        dbg_print_flow(put->key, put->key_len, put->mask, put->mask_len,
-                       put->actions, put->actions_len, put->ufid,
-                       (put->flags & DPIF_FP_MODIFY ? "PUT(MODIFY)" : "PUT"));
-        return parse_flow_put(dpif, put);
+
+        log_flow_put_message(&dpif->dpif, &this_module, put, 0);
+        err = parse_flow_put(dpif, put);
+        break;
     }
     case DPIF_OP_FLOW_DEL: {
         struct dpif_flow_del *del = &op->u.flow_del;
@@ -2160,10 +2136,11 @@ try_send_to_netdev(struct dpif_netlink *dpif, struct dpif_op *op)
         if (!del->ufid) {
             break;
         }
-        dbg_print_flow(del->key, del->key_len, NULL, 0, NULL, 0,
-                       del->ufid, "DEL");
-        return netdev_ports_flow_del(DPIF_HMAP_KEY(&dpif->dpif), del->ufid,
-                                     del->stats);
+
+        log_flow_del_message(&dpif->dpif, &this_module, del, 0);
+        err = netdev_ports_flow_del(DPIF_HMAP_KEY(&dpif->dpif), del->ufid,
+                                    del->stats);
+        break;
     }
     case DPIF_OP_FLOW_GET: {
         struct dpif_flow_get *get = &op->u.flow_get;
@@ -2171,15 +2148,17 @@ try_send_to_netdev(struct dpif_netlink *dpif, struct dpif_op *op)
         if (!op->u.flow_get.ufid) {
             break;
         }
-        dbg_print_flow(get->key, get->key_len, NULL, 0, NULL, 0,
-                       get->ufid, "GET");
-        return parse_flow_get(dpif, get);
+
+        log_flow_get_message(&dpif->dpif, &this_module, get, 0);
+        err = parse_flow_get(dpif, get);
+        break;
     }
     case DPIF_OP_EXECUTE:
     default:
         break;
     }
-    return EOPNOTSUPP;
+
+    return err;
 }
 
 static void
