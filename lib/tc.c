@@ -1338,6 +1338,9 @@ nl_msg_put_flower_tunnel(struct ofpbuf *request, struct tc_flower *flower)
     nl_msg_put_be16(request, TCA_FLOWER_KEY_ENC_UDP_DST_PORT, tp_dst);
 }
 
+#define flower_put_masked_value(member, type) \
+    nl_msg_put_masked_value(request, type, type##_MASK, &flower->key.member, \
+                            &flower->mask.member, sizeof flower->key.member)
 static int
 nl_msg_put_flower_options(struct ofpbuf *request, struct tc_flower *flower)
 {
@@ -1356,17 +1359,8 @@ nl_msg_put_flower_options(struct ofpbuf *request, struct tc_flower *flower)
         host_eth_type = ntohs(flower->key.encap_eth_type);
     }
 
-    nl_msg_put_masked_value(request,
-                            TCA_FLOWER_KEY_ETH_DST,
-                            TCA_FLOWER_KEY_ETH_DST_MASK,
-                            &flower->key.dst_mac,
-                            &flower->mask.dst_mac, ETH_ALEN);
-
-    nl_msg_put_masked_value(request,
-                            TCA_FLOWER_KEY_ETH_SRC,
-                            TCA_FLOWER_KEY_ETH_SRC_MASK,
-                            &flower->key.src_mac,
-                            &flower->mask.src_mac, ETH_ALEN);
+    flower_put_masked_value(dst_mac, TCA_FLOWER_KEY_ETH_DST);
+    flower_put_masked_value(src_mac, TCA_FLOWER_KEY_ETH_SRC);
 
     if (host_eth_type == ETH_P_IP || host_eth_type == ETH_P_IPV6) {
         if (flower->mask.ip_proto && flower->key.ip_proto) {
@@ -1375,56 +1369,20 @@ nl_msg_put_flower_options(struct ofpbuf *request, struct tc_flower *flower)
         }
 
         if (flower->key.ip_proto == IPPROTO_UDP) {
-            nl_msg_put_masked_value(request,
-                                    TCA_FLOWER_KEY_UDP_SRC,
-                                    TCA_FLOWER_KEY_UDP_SRC_MASK,
-                                    &flower->key.udp_src,
-                                    &flower->mask.udp_src, 2);
-            nl_msg_put_masked_value(request,
-                                    TCA_FLOWER_KEY_UDP_DST,
-                                    TCA_FLOWER_KEY_UDP_DST_MASK,
-                                    &flower->key.udp_dst,
-                                    &flower->mask.udp_dst, 2);
+            flower_put_masked_value(udp_src, TCA_FLOWER_KEY_UDP_SRC);
+            flower_put_masked_value(udp_dst, TCA_FLOWER_KEY_UDP_DST);
         } else if (flower->key.ip_proto == IPPROTO_TCP) {
-            nl_msg_put_masked_value(request,
-                                    TCA_FLOWER_KEY_TCP_SRC,
-                                    TCA_FLOWER_KEY_TCP_SRC_MASK,
-                                    &flower->key.tcp_src,
-                                    &flower->mask.tcp_src, 2);
-            nl_msg_put_masked_value(request,
-                                    TCA_FLOWER_KEY_TCP_DST,
-                                    TCA_FLOWER_KEY_TCP_DST_MASK,
-                                    &flower->key.tcp_dst,
-                                    &flower->mask.tcp_dst, 2);
+            flower_put_masked_value(tcp_src, TCA_FLOWER_KEY_TCP_SRC);
+            flower_put_masked_value(tcp_dst, TCA_FLOWER_KEY_TCP_DST);
         }
     }
 
     if (host_eth_type == ETH_P_IP) {
-            nl_msg_put_masked_value(request,
-                                    TCA_FLOWER_KEY_IPV4_SRC,
-                                    TCA_FLOWER_KEY_IPV4_SRC_MASK,
-                                    &flower->key.ipv4.ipv4_src,
-                                    &flower->mask.ipv4.ipv4_src,
-                                    sizeof flower->key.ipv4.ipv4_src);
-            nl_msg_put_masked_value(request,
-                                    TCA_FLOWER_KEY_IPV4_DST,
-                                    TCA_FLOWER_KEY_IPV4_DST_MASK,
-                                    &flower->key.ipv4.ipv4_dst,
-                                    &flower->mask.ipv4.ipv4_dst,
-                                    sizeof flower->key.ipv4.ipv4_dst);
+            flower_put_masked_value(ipv4.ipv4_src, TCA_FLOWER_KEY_IPV4_SRC);
+            flower_put_masked_value(ipv4.ipv4_dst, TCA_FLOWER_KEY_IPV4_DST);
     } else if (host_eth_type == ETH_P_IPV6) {
-            nl_msg_put_masked_value(request,
-                                    TCA_FLOWER_KEY_IPV6_SRC,
-                                    TCA_FLOWER_KEY_IPV6_SRC_MASK,
-                                    &flower->key.ipv6.ipv6_src,
-                                    &flower->mask.ipv6.ipv6_src,
-                                    sizeof flower->key.ipv6.ipv6_src);
-            nl_msg_put_masked_value(request,
-                                    TCA_FLOWER_KEY_IPV6_DST,
-                                    TCA_FLOWER_KEY_IPV6_DST_MASK,
-                                    &flower->key.ipv6.ipv6_dst,
-                                    &flower->mask.ipv6.ipv6_dst,
-                                    sizeof flower->key.ipv6.ipv6_dst);
+            flower_put_masked_value(ipv6.ipv6_src, TCA_FLOWER_KEY_IPV6_SRC);
+            flower_put_masked_value(ipv6.ipv6_dst, TCA_FLOWER_KEY_IPV6_DST);
     }
 
     nl_msg_put_be16(request, TCA_FLOWER_KEY_ETH_TYPE, flower->key.eth_type);
