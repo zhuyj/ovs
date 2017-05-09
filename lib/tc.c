@@ -443,10 +443,9 @@ nl_parse_act_drop(struct nlattr *options, struct tc_flower *flower)
     gact_parms = gact_attrs[TCA_GACT_PARMS];
     p = nl_attr_get_unspec(gact_parms, sizeof *p);
 
-    if (p->action == TC_ACT_SHOT) {
-    } else {
-            VLOG_ERR_RL(&parse_err, "unknown gact action: %d", p->action);
-            return EINVAL;
+    if (p->action != TC_ACT_SHOT) {
+        VLOG_ERR_RL(&parse_err, "unknown gact action: %d", p->action);
+        return EINVAL;
     }
 
     tm = nl_attr_get_unspec(gact_attrs[TCA_GACT_TM], sizeof *tm);
