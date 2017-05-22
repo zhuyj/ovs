@@ -442,10 +442,14 @@ static unsigned int tc_ticks_to_bytes(unsigned int rate, unsigned int ticks);
 static unsigned int tc_bytes_to_ticks(unsigned int rate, unsigned int size);
 static unsigned int tc_buffer_per_jiffy(unsigned int rate);
 
-static struct tcmsg *tc_make_request(const struct netdev *, int type,
+static struct tcmsg *tc_make_request(int ifindex, int type,
                                      unsigned int flags, struct ofpbuf *);
+static struct tcmsg *netdev_linux_tc_make_request(const struct netdev *,
+                                                  int type,
+                                                  unsigned int flags,
+                                                  struct ofpbuf *);
 static int tc_transact(struct ofpbuf *request, struct ofpbuf **replyp);
-static int tc_add_del_ingress_qdisc(struct netdev *netdev, bool add);
+static int tc_add_del_ingress_qdisc(int ifindex, bool add);
 static int tc_add_policer(struct netdev *,
                           uint32_t kbits_rate, uint32_t kbits_burst);
 
@@ -2075,6 +2079,7 @@ netdev_linux_set_policing(struct netdev *netdev_,
 {
     struct netdev_linux *netdev = netdev_linux_cast(netdev_);
     const char *netdev_name = netdev_get_name(netdev_);
+    int ifindex;
     int error;
 
     kbits_burst = (!kbits_rate ? 0       /* Force to 0 if no rate specified. */
@@ -2092,9 +2097,14 @@ netdev_linux_set_policing(struct netdev *netdev_,
         netdev->cache_valid &= ~VALID_POLICING;
     }
 
+    error = get_ifindex(netdev_, &ifindex);
+    if (error) {
+        goto out;
+    }
+
     COVERAGE_INC(netdev_set_policing);
     /* Remove any existing ingress qdisc. */
-    error = tc_add_del_ingress_qdisc(netdev_, false);
+    error = tc_add_del_ingress_qdisc(ifindex, false);
     if (error) {
         VLOG_WARN_RL(&rl, "%s: removing policing failed: %s",
                      netdev_name, ovs_strerror(error));
@@ -2102,7 +2112,7 @@ netdev_linux_set_policing(struct netdev *netdev_,
     }
 
     if (kbits_rate) {
-        error = tc_add_del_ingress_qdisc(netdev_, true);
+        error = tc_add_del_ingress_qdisc(ifindex, true);
         if (error) {
             VLOG_WARN_RL(&rl, "%s: adding policing qdisc failed: %s",
                          netdev_name, ovs_strerror(error));
@@ -2371,7 +2381,7 @@ start_queue_dump(const struct netdev *netdev, struct queue_dump_state *state)
     struct ofpbuf request;
     struct tcmsg *tcmsg;
 
-    tcmsg = tc_make_request(netdev, RTM_GETTCLASS, 0, &request);
+    tcmsg = netdev_linux_tc_make_request(netdev, RTM_GETTCLASS, 0, &request);
     if (!tcmsg) {
         return false;
     }
@@ -2930,8 +2940,8 @@ codel_setup_qdisc__(struct netdev *netdev, uint32_t target, uint32_t limit,
 
     tc_del_qdisc(netdev);
 
-    tcmsg = tc_make_request(netdev, RTM_NEWQDISC,
-                            NLM_F_EXCL | NLM_F_CREATE, &request);
+    tcmsg = netdev_linux_tc_make_request(netdev, RTM_NEWQDISC,
+                                         NLM_F_EXCL | NLM_F_CREATE, &request);
     if (!tcmsg) {
         return ENODEV;
     }
@@ -3148,8 +3158,8 @@ fqcodel_setup_qdisc__(struct netdev *netdev, uint32_t target, uint32_t limit,
 
     tc_del_qdisc(netdev);
 
-    tcmsg = tc_make_request(netdev, RTM_NEWQDISC,
-                            NLM_F_EXCL | NLM_F_CREATE, &request);
+    tcmsg = netdev_linux_tc_make_request(netdev, RTM_NEWQDISC,
+                                         NLM_F_EXCL | NLM_F_CREATE, &request);
     if (!tcmsg) {
         return ENODEV;
     }
@@ -3372,8 +3382,8 @@ sfq_setup_qdisc__(struct netdev *netdev, uint32_t quantum, uint32_t perturb)
 
     tc_del_qdisc(netdev);
 
-    tcmsg = tc_make_request(netdev, RTM_NEWQDISC,
-                            NLM_F_EXCL | NLM_F_CREATE, &request);
+    tcmsg = netdev_linux_tc_make_request(netdev, RTM_NEWQDISC,
+                                         NLM_F_EXCL | NLM_F_CREATE, &request);
     if (!tcmsg) {
         return ENODEV;
     }
@@ -3559,8 +3569,8 @@ htb_setup_qdisc__(struct netdev *netdev)
 
     tc_del_qdisc(netdev);
 
-    tcmsg = tc_make_request(netdev, RTM_NEWQDISC,
-                            NLM_F_EXCL | NLM_F_CREATE, &request);
+    tcmsg = netdev_linux_tc_make_request(netdev, RTM_NEWQDISC,
+                                         NLM_F_EXCL | NLM_F_CREATE, &request);
     if (!tcmsg) {
         return ENODEV;
     }
@@ -3613,7 +3623,8 @@ htb_setup_class__(struct netdev *netdev, unsigned int handle,
     opt.cbuffer = tc_calc_buffer(opt.ceil.rate, mtu, class->burst);
     opt.prio = class->priority;
 
-    tcmsg = tc_make_request(netdev, RTM_NEWTCLASS, NLM_F_CREATE, &request);
+    tcmsg = netdev_linux_tc_make_request(netdev, RTM_NEWTCLASS, NLM_F_CREATE,
+                                         &request);
     if (!tcmsg) {
         return ENODEV;
     }
@@ -4222,8 +4233,8 @@ hfsc_setup_qdisc__(struct netdev * netdev)
 
     tc_del_qdisc(netdev);
 
-    tcmsg = tc_make_request(netdev, RTM_NEWQDISC,
-                            NLM_F_EXCL | NLM_F_CREATE, &request);
+    tcmsg = netdev_linux_tc_make_request(netdev, RTM_NEWQDISC,
+                                         NLM_F_EXCL | NLM_F_CREATE, &request);
 
     if (!tcmsg) {
         return ENODEV;
@@ -4255,7 +4266,8 @@ hfsc_setup_class__(struct netdev *netdev, unsigned int handle,
     struct ofpbuf request;
     struct tc_service_curve min, max;
 
-    tcmsg = tc_make_request(netdev, RTM_NEWTCLASS, NLM_F_CREATE, &request);
+    tcmsg = netdev_linux_tc_make_request(netdev, RTM_NEWTCLASS, NLM_F_CREATE,
+                                         &request);
 
     if (!tcmsg) {
         return ENODEV;
@@ -4653,17 +4665,10 @@ tc_get_minor(unsigned int handle)
 }
 
 static struct tcmsg *
-tc_make_request(const struct netdev *netdev, int type, unsigned int flags,
+tc_make_request(int ifindex, int type, unsigned int flags,
                 struct ofpbuf *request)
 {
     struct tcmsg *tcmsg;
-    int ifindex;
-    int error;
-
-    error = get_ifindex(netdev, &ifindex);
-    if (error) {
-        return NULL;
-    }
 
     ofpbuf_init(request, 512);
     nl_msg_put_nlmsghdr(request, sizeof *tcmsg, type, NLM_F_REQUEST | flags);
@@ -4674,6 +4679,21 @@ tc_make_request(const struct netdev *netdev, int type, unsigned int flags,
     /* Caller should fill in tcmsg->tcm_parent. */
 
     return tcmsg;
+}
+
+static struct tcmsg *
+netdev_linux_tc_make_request(const struct netdev *netdev, int type,
+                             unsigned int flags, struct ofpbuf *request)
+{
+    int ifindex;
+    int error;
+
+    error = get_ifindex(netdev, &ifindex);
+    if (error) {
+        return NULL;
+    }
+
+    return tc_make_request(ifindex, type, flags, request);
 }
 
 static int
@@ -4699,7 +4719,7 @@ tc_transact(struct ofpbuf *request, struct ofpbuf **replyp)
  * Returns 0 if successful, otherwise a positive errno value.
  */
 static int
-tc_add_del_ingress_qdisc(struct netdev *netdev, bool add)
+tc_add_del_ingress_qdisc(int ifindex, bool add)
 {
     struct ofpbuf request;
     struct tcmsg *tcmsg;
@@ -4707,10 +4727,7 @@ tc_add_del_ingress_qdisc(struct netdev *netdev, bool add)
     int type = add ? RTM_NEWQDISC : RTM_DELQDISC;
     int flags = add ? NLM_F_EXCL | NLM_F_CREATE : 0;
 
-    tcmsg = tc_make_request(netdev, type, flags, &request);
-    if (!tcmsg) {
-        return ENODEV;
-    }
+    tcmsg = tc_make_request(ifindex, type, flags, &request);
     tcmsg->tcm_handle = tc_make_handle(0xffff, 0);
     tcmsg->tcm_parent = TC_H_INGRESS;
     nl_msg_put_string(&request, TCA_KIND, "ingress");
@@ -4769,8 +4786,8 @@ tc_add_policer(struct netdev *netdev,
     tc_police.burst = tc_bytes_to_ticks(
         tc_police.rate.rate, MIN(UINT32_MAX / 1024, kbits_burst) * 1024 / 8);
 
-    tcmsg = tc_make_request(netdev, RTM_NEWTFILTER,
-                            NLM_F_EXCL | NLM_F_CREATE, &request);
+    tcmsg = netdev_linux_tc_make_request(netdev, RTM_NEWTFILTER,
+                                         NLM_F_EXCL | NLM_F_CREATE, &request);
     if (!tcmsg) {
         return ENODEV;
     }
@@ -5035,7 +5052,8 @@ tc_query_class(const struct netdev *netdev,
     struct tcmsg *tcmsg;
     int error;
 
-    tcmsg = tc_make_request(netdev, RTM_GETTCLASS, NLM_F_ECHO, &request);
+    tcmsg = netdev_linux_tc_make_request(netdev, RTM_GETTCLASS, NLM_F_ECHO,
+                                         &request);
     if (!tcmsg) {
         return ENODEV;
     }
@@ -5061,7 +5079,7 @@ tc_delete_class(const struct netdev *netdev, unsigned int handle)
     struct tcmsg *tcmsg;
     int error;
 
-    tcmsg = tc_make_request(netdev, RTM_DELTCLASS, 0, &request);
+    tcmsg = netdev_linux_tc_make_request(netdev, RTM_DELTCLASS, 0, &request);
     if (!tcmsg) {
         return ENODEV;
     }
@@ -5087,7 +5105,7 @@ tc_del_qdisc(struct netdev *netdev_)
     struct tcmsg *tcmsg;
     int error;
 
-    tcmsg = tc_make_request(netdev_, RTM_DELQDISC, 0, &request);
+    tcmsg = netdev_linux_tc_make_request(netdev_, RTM_DELQDISC, 0, &request);
     if (!tcmsg) {
         return ENODEV;
     }
@@ -5168,7 +5186,8 @@ tc_query_qdisc(const struct netdev *netdev_)
      * in such a case we get no response at all from the kernel (!) if a
      * builtin qdisc is in use (which is later caught by "!error &&
      * !qdisc->size"). */
-    tcmsg = tc_make_request(netdev_, RTM_GETQDISC, NLM_F_ECHO, &request);
+    tcmsg = netdev_linux_tc_make_request(netdev_, RTM_GETQDISC, NLM_F_ECHO,
+                                         &request);
     if (!tcmsg) {
         return ENODEV;
     }
