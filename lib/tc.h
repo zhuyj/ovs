@@ -96,6 +96,7 @@ struct tc_flower_key {
     struct {
         ovs_be32 ipv4_src;
         ovs_be32 ipv4_dst;
+        uint8_t rewrite_ttl;
     } ipv4;
     struct {
         struct in6_addr ipv6_src;
@@ -118,6 +119,17 @@ struct tc_flower {
 
     struct ovs_flow_stats stats;
     uint64_t lastused;
+
+    struct {
+        bool rewrite;
+        uint8_t pad1[3];
+        struct tc_flower_key key;
+        uint8_t pad2[3];
+        struct tc_flower_key mask;
+        uint8_t pad3[3];
+    } rewrite;
+
+    uint32_t csum_update_flags;
 
     struct {
         bool set;
