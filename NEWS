@@ -36,6 +36,9 @@ Post-v2.7.0
      * The port status bit OFPPS_LIVE now reflects link aliveness.
    - Fedora Packaging:
      * OVN services are no longer restarted automatically after upgrade.
+   - New support for HW offloading
+     * HW offloading is disabled by default.
+     * HW offloading is done through the TC interface.
 
 v2.7.0 - 21 Feb 2017
 ---------------------
