@@ -330,7 +330,9 @@ parse_tc_flower_to_match(struct tc_flower *flower,
             match_set_tun_ipv6_src(match, &flower->tunnel.ipv6.ipv6_src);
             match_set_tun_ipv6_dst(match, &flower->tunnel.ipv6.ipv6_dst);
         }
-        match_set_tp_dst(match, flower->tunnel.tp_dst);
+        if (flower->tunnel.tp_dst) {
+            match_set_tun_dst(match, flower->tunnel.tp_dst);
+        }
     }
 
     act_off = nl_msg_start_nested(buf, OVS_FLOW_ATTR_ACTIONS);
