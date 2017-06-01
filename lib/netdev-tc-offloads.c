@@ -549,12 +549,12 @@ test_key_and_mask(struct match *match) {
     }
 
     if (mask->ct_mark) {
-        VLOG_DBG_RL(&rl, "offloading attribute ct_zone isn't supported");
+        VLOG_DBG_RL(&rl, "offloading attribute ct_mark isn't supported");
         return EOPNOTSUPP;
     }
 
     if (!ovs_u128_is_zero(mask->ct_label)) {
-        VLOG_DBG_RL(&rl, "offloading attribute ct_lable isn't supported");
+        VLOG_DBG_RL(&rl, "offloading attribute ct_label isn't supported");
         return EOPNOTSUPP;
     }
 
