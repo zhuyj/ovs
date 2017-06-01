@@ -942,4 +942,3 @@ netdev_tc_init_flow_api(struct netdev *netdev)
 
     return 0;
 }
-
