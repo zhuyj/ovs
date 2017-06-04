@@ -331,7 +331,7 @@ parse_tc_flower_to_match(struct tc_flower *flower,
             match_set_tun_ipv6_dst(match, &flower->tunnel.ipv6.ipv6_dst);
         }
         if (flower->tunnel.tp_dst) {
-            match_set_tun_dst(match, flower->tunnel.tp_dst);
+            match_set_tun_tp_dst(match, flower->tunnel.tp_dst);
         }
     }
 
