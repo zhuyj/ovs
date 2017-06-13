@@ -294,18 +294,18 @@ parse_tc_flower_to_match(struct tc_flower *flower,
     ofpbuf_clear(buf);
 
     match_init_catchall(match);
-    match_set_dl_type(match, key->eth_type);
     match_set_dl_src_masked(match, key->src_mac, mask->src_mac);
     match_set_dl_dst_masked(match, key->dst_mac, mask->dst_mac);
-    if (key->vlan_id || key->vlan_prio) {
+
+    if (key->eth_type == htons(ETH_TYPE_VLAN)) {
         match_set_dl_vlan(match, htons(key->vlan_id));
         match_set_dl_vlan_pcp(match, key->vlan_prio);
         match_set_dl_type(match, key->encap_eth_type);
+    } else {
+        match_set_dl_type(match, key->eth_type);
     }
 
-    if (key->ip_proto &&
-        (key->eth_type == htons(ETH_P_IP)
-         || key->eth_type == htons(ETH_P_IPV6))) {
+    if (key->ip_proto && is_ip_any(&match->flow)) {
         match_set_nw_proto(match, key->ip_proto);
     }
 
