@@ -505,7 +505,7 @@ nl_parse_act_vlan(struct nlattr *options, struct tc_flower *flower)
         struct nlattr *vlan_prio = vlan_attrs[TCA_VLAN_PUSH_VLAN_PRIORITY];
 
         flower->vlan_push_id = nl_attr_get_u16(vlan_id);
-        flower->vlan_push_prio = nl_attr_get_u8(vlan_prio);
+        flower->vlan_push_prio = vlan_prio ? nl_attr_get_u8(vlan_prio) : 0;
     } else if (v->v_action == TCA_VLAN_ACT_POP) {
         flower->vlan_pop = 1;
     } else {
