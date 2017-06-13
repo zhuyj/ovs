@@ -301,6 +301,7 @@ parse_tc_flower_to_match(struct tc_flower *flower,
         match_set_dl_vlan(match, htons(key->vlan_id));
         match_set_dl_vlan_pcp(match, key->vlan_prio);
         match_set_dl_type(match, key->encap_eth_type);
+        flow_fix_vlan_tpid(&match->flow);
     } else {
         match_set_dl_type(match, key->eth_type);
     }
