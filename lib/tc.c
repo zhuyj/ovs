@@ -31,6 +31,7 @@
 #include "netlink.h"
 #include "openvswitch/ofpbuf.h"
 #include "openvswitch/vlog.h"
+#include "packets.h"
 #include "timeval.h"
 #include <unaligned.h>
 
@@ -214,7 +215,7 @@ nl_parse_flower_eth(struct nlattr **attrs, struct tc_flower *flower)
 static void
 nl_parse_flower_vlan(struct nlattr **attrs, struct tc_flower *flower)
 {
-    if (flower->key.eth_type != htons(ETH_P_8021Q)) {
+    if (flower->key.eth_type != htons(ETH_TYPE_VLAN)) {
         return;
     }
 
@@ -971,12 +972,18 @@ static void
 nl_msg_put_flower_options(struct ofpbuf *request, struct tc_flower *flower)
 {
     uint16_t host_eth_type = ntohs(flower->key.eth_type);
+    bool is_vlan = (host_eth_type == ETH_TYPE_VLAN);
+
+    if (is_vlan) {
+        host_eth_type = ntohs(flower->key.encap_eth_type);
+    }
 
     nl_msg_put_masked_value(request,
                             TCA_FLOWER_KEY_ETH_DST,
                             TCA_FLOWER_KEY_ETH_DST_MASK,
                             &flower->key.dst_mac,
                             &flower->mask.dst_mac, ETH_ALEN);
+
     nl_msg_put_masked_value(request,
                             TCA_FLOWER_KEY_ETH_SRC,
                             TCA_FLOWER_KEY_ETH_SRC_MASK,
@@ -988,6 +995,7 @@ nl_msg_put_flower_options(struct ofpbuf *request, struct tc_flower *flower)
             nl_msg_put_u8(request, TCA_FLOWER_KEY_IP_PROTO,
                           flower->key.ip_proto);
         }
+
         if (flower->key.ip_proto == IPPROTO_UDP) {
             nl_msg_put_masked_value(request,
                                     TCA_FLOWER_KEY_UDP_SRC,
@@ -1012,6 +1020,7 @@ nl_msg_put_flower_options(struct ofpbuf *request, struct tc_flower *flower)
                                     &flower->mask.dst_port, 2);
         }
     }
+
     if (host_eth_type == ETH_P_IP) {
             nl_msg_put_masked_value(request,
                                     TCA_FLOWER_KEY_IPV4_SRC,
@@ -1042,7 +1051,7 @@ nl_msg_put_flower_options(struct ofpbuf *request, struct tc_flower *flower)
 
     nl_msg_put_be16(request, TCA_FLOWER_KEY_ETH_TYPE, flower->key.eth_type);
 
-    if (host_eth_type == ETH_P_8021Q) {
+    if (is_vlan) {
         if (flower->key.vlan_id || flower->key.vlan_prio) {
             nl_msg_put_u16(request, TCA_FLOWER_KEY_VLAN_ID,
                            flower->key.vlan_id);
