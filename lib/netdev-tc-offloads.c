@@ -678,6 +678,20 @@ parse_put_flow_set_action(struct tc_flower *flower, const struct nlattr *set,
     return 0;
 }
 
+static void
+find_non_zero_fields(const void *p_, size_t n)
+{
+    const uint8_t *p = p_;
+    size_t i;
+
+    for (i = 0; i < n; i++) {
+        if (p[i] != 0x00) {
+            VLOG_DBG("non zero offset %lu value %x", i, p[i]);
+        }
+    }
+}
+
+
 static int
 test_key_and_mask(struct match *match)
 {
@@ -813,6 +827,7 @@ test_key_and_mask(struct match *match)
 
     if (!is_all_zeros(mask, sizeof *mask)) {
         VLOG_DBG_RL(&rl, "offloading isn't supported, unknown attribute");
+        find_non_zero_fields(mask, sizeof *mask);
         return EOPNOTSUPP;
     }
 
