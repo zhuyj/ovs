@@ -754,12 +754,18 @@ netdev_tc_flow_put(struct netdev *netdev, struct match *match,
     if (is_ip_any(key)) {
         flower.key.ip_proto = key->nw_proto;
         flower.mask.ip_proto = mask->nw_proto;
-
-        if (key->nw_proto == IPPROTO_TCP || key->nw_proto == IPPROTO_UDP) {
-            flower.key.dst_port = key->tp_dst;
-            flower.mask.dst_port = mask->tp_dst;
-            flower.key.src_port = key->tp_src;
-            flower.mask.src_port = mask->tp_src;
+        if (key->nw_proto == IPPROTO_TCP) {
+            flower.key.tcp_dst = key->tp_dst;
+            flower.mask.tcp_dst = mask->tp_dst;
+            flower.key.tcp_src = key->tp_src;
+            flower.mask.tcp_src = mask->tp_src;
+            mask->tp_src = 0;
+            mask->tp_dst = 0;
+        } else if (key->nw_proto == IPPROTO_UDP) {
+            flower.key.udp_dst = key->tp_dst;
+            flower.mask.udp_dst = mask->tp_dst;
+            flower.key.udp_src = key->tp_src;
+            flower.mask.udp_src = mask->tp_src;
             mask->tp_src = 0;
             mask->tp_dst = 0;
         }

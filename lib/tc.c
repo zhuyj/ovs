@@ -305,26 +305,26 @@ nl_parse_flower_ip(struct nlattr **attrs, struct tc_flower *flower) {
 
     if (ip_proto == IPPROTO_TCP) {
         if (attrs[TCA_FLOWER_KEY_TCP_SRC_MASK]) {
-            key->src_port =
+            key->tcp_src =
                 nl_attr_get_be16(attrs[TCA_FLOWER_KEY_TCP_SRC]);
-            mask->src_port =
+            mask->tcp_src =
                 nl_attr_get_be16(attrs[TCA_FLOWER_KEY_TCP_SRC_MASK]);
         }
         if (attrs[TCA_FLOWER_KEY_TCP_DST_MASK]) {
-            key->dst_port =
+            key->tcp_dst =
                 nl_attr_get_be16(attrs[TCA_FLOWER_KEY_TCP_DST]);
-            mask->dst_port =
+            mask->tcp_dst =
                 nl_attr_get_be16(attrs[TCA_FLOWER_KEY_TCP_DST_MASK]);
         }
     } else if (ip_proto == IPPROTO_UDP) {
         if (attrs[TCA_FLOWER_KEY_UDP_SRC_MASK]) {
-            key->src_port = nl_attr_get_be16(attrs[TCA_FLOWER_KEY_UDP_SRC]);
-            mask->src_port =
+            key->udp_src = nl_attr_get_be16(attrs[TCA_FLOWER_KEY_UDP_SRC]);
+            mask->udp_src =
                 nl_attr_get_be16(attrs[TCA_FLOWER_KEY_UDP_SRC_MASK]);
         }
         if (attrs[TCA_FLOWER_KEY_UDP_DST_MASK]) {
-            key->dst_port = nl_attr_get_be16(attrs[TCA_FLOWER_KEY_UDP_DST]);
-            mask->dst_port =
+            key->udp_dst = nl_attr_get_be16(attrs[TCA_FLOWER_KEY_UDP_DST]);
+            mask->udp_dst =
                 nl_attr_get_be16(attrs[TCA_FLOWER_KEY_UDP_DST_MASK]);
         }
     }
@@ -1002,24 +1002,24 @@ nl_msg_put_flower_options(struct ofpbuf *request, struct tc_flower *flower)
             nl_msg_put_masked_value(request,
                                     TCA_FLOWER_KEY_UDP_SRC,
                                     TCA_FLOWER_KEY_UDP_SRC_MASK,
-                                    &flower->key.src_port,
-                                    &flower->mask.src_port, 2);
+                                    &flower->key.udp_src,
+                                    &flower->mask.udp_src, 2);
             nl_msg_put_masked_value(request,
                                     TCA_FLOWER_KEY_UDP_DST,
                                     TCA_FLOWER_KEY_UDP_DST_MASK,
-                                    &flower->key.dst_port,
-                                    &flower->mask.dst_port, 2);
+                                    &flower->key.udp_dst,
+                                    &flower->mask.udp_dst, 2);
         } else if (flower->key.ip_proto == IPPROTO_TCP) {
             nl_msg_put_masked_value(request,
                                     TCA_FLOWER_KEY_TCP_SRC,
                                     TCA_FLOWER_KEY_TCP_SRC_MASK,
-                                    &flower->key.src_port,
-                                    &flower->mask.src_port, 2);
+                                    &flower->key.tcp_src,
+                                    &flower->mask.tcp_src, 2);
             nl_msg_put_masked_value(request,
                                     TCA_FLOWER_KEY_TCP_DST,
                                     TCA_FLOWER_KEY_TCP_DST_MASK,
-                                    &flower->key.dst_port,
-                                    &flower->mask.dst_port, 2);
+                                    &flower->key.tcp_dst,
+                                    &flower->mask.tcp_dst, 2);
         }
     }
 
