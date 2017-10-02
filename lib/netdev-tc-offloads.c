@@ -302,6 +302,7 @@ int
 netdev_tc_flow_flush(struct netdev *netdev)
 {
     int ifindex = netdev_get_ifindex(netdev);
+    int error;
 
     if (ifindex < 0) {
         VLOG_ERR_RL(&error_rl, "flow_flush: failed to get ifindex for %s: %s",
@@ -309,7 +310,15 @@ netdev_tc_flow_flush(struct netdev *netdev)
         return -ifindex;
     }
 
-    return tc_flush(ifindex);
+    error = tc_add_del_ingress_qdisc(ifindex, false);
+    error = tc_add_del_ingress_qdisc(ifindex, true);
+
+    if (error && error != EEXIST) {
+        VLOG_ERR("failed adding ingress qdisc required for offloading: %s",
+                 ovs_strerror(error));
+    }
+
+    return error;
 }
 
 int
