@@ -188,6 +188,7 @@ void netdev_send_wait(struct netdev *, int qid);
 struct offload_info {
     const struct dpif_class *dpif_class;
     ovs_be16 tp_dst_port; /* Destination port for tunnel in SET action */
+    bool ovs_sw; /* send this to ovs dp as well for sw processing */
 };
 struct dpif_class;
 struct netdev_flow_dump;

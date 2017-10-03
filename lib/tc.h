@@ -165,7 +165,7 @@ struct tc_flower {
 };
 
 int tc_replace_flower(int ifindex, uint16_t prio, uint32_t handle,
-                      struct tc_flower *flower);
+                      struct tc_flower *flower, bool skip_sw);
 int tc_del_filter(int ifindex, int prio, int handle);
 int tc_get_flower(int ifindex, int prio, int handle,
                   struct tc_flower *flower);

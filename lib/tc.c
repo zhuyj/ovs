@@ -309,21 +309,27 @@ nl_parse_flower_eth(struct nlattr **attrs, struct tc_flower *flower)
 static void
 nl_parse_flower_vlan(struct nlattr **attrs, struct tc_flower *flower)
 {
-    if (flower->key.eth_type != htons(ETH_TYPE_VLAN)) {
-        return;
-    }
+    bool vlan = false;
 
-    flower->key.encap_eth_type =
+    flower->key.eth_type =
         nl_attr_get_be16(attrs[TCA_FLOWER_KEY_ETH_TYPE]);
 
     if (attrs[TCA_FLOWER_KEY_VLAN_ID]) {
         flower->key.vlan_id =
             nl_attr_get_u16(attrs[TCA_FLOWER_KEY_VLAN_ID]);
+        vlan = true;
     }
     if (attrs[TCA_FLOWER_KEY_VLAN_PRIO]) {
         flower->key.vlan_prio =
             nl_attr_get_u8(attrs[TCA_FLOWER_KEY_VLAN_PRIO]);
+        vlan = true;
     }
+
+    flower->key.encap_eth_type =
+        nl_attr_get_be16(attrs[TCA_FLOWER_KEY_ETH_TYPE]);
+
+    if (vlan)
+        flower->key.eth_type = htons(ETH_TYPE_VLAN);
 }
 
 static void
@@ -1374,7 +1380,8 @@ nl_msg_put_flower_tunnel(struct ofpbuf *request, struct tc_flower *flower)
                             &flower->mask.member, sizeof flower->key.member)
 
 static int
-nl_msg_put_flower_options(struct ofpbuf *request, struct tc_flower *flower)
+nl_msg_put_flower_options(struct ofpbuf *request, struct tc_flower *flower,
+                          bool skip_sw)
 {
 
     uint16_t host_eth_type = ntohs(flower->key.eth_type);
@@ -1437,7 +1444,11 @@ nl_msg_put_flower_options(struct ofpbuf *request, struct tc_flower *flower)
         }
     }
 
-    nl_msg_put_u32(request, TCA_FLOWER_FLAGS, tc_get_tc_cls_policy(tc_policy));
+    if (!skip_sw)
+        nl_msg_put_u32(request, TCA_FLOWER_FLAGS, tc_get_tc_cls_policy(tc_policy));
+    else
+        nl_msg_put_u32(request, TCA_FLOWER_FLAGS, TCA_CLS_FLAGS_SKIP_SW);
+
 
     if (flower->tunnel.tunnel) {
         nl_msg_put_flower_tunnel(request, flower);
@@ -1448,7 +1459,7 @@ nl_msg_put_flower_options(struct ofpbuf *request, struct tc_flower *flower)
 
 int
 tc_replace_flower(int ifindex, uint16_t prio, uint32_t handle,
-                  struct tc_flower *flower)
+                  struct tc_flower *flower, bool skip_sw)
 {
     struct ofpbuf request;
     struct tcmsg *tcmsg;
@@ -1460,13 +1471,13 @@ tc_replace_flower(int ifindex, uint16_t prio, uint32_t handle,
     tcmsg = tc_make_request(ifindex, RTM_NEWTFILTER,
                             NLM_F_CREATE | NLM_F_ECHO, &request);
     tcmsg->tcm_parent = TC_INGRESS_PARENT;
-    tcmsg->tcm_info = tc_make_handle(prio, eth_type);
+    tcmsg->tcm_info = tc_make_handle(prio, htons(ETH_P_ALL));
     tcmsg->tcm_handle = handle;
 
     nl_msg_put_string(&request, TCA_KIND, "flower");
     basic_offset = nl_msg_start_nested(&request, TCA_OPTIONS);
     {
-        error = nl_msg_put_flower_options(&request, flower);
+        error = nl_msg_put_flower_options(&request, flower, skip_sw);
 
         if (error) {
             ofpbuf_uninit(&request);

@@ -67,6 +67,9 @@ COVERAGE_DEFINE(dpif_meter_set);
 COVERAGE_DEFINE(dpif_meter_get);
 COVERAGE_DEFINE(dpif_meter_del);
 
+
+bool in_dpctl = false;
+
 static const struct dpif_class *base_dpif_classes[] = {
 #if defined(__linux__) || defined(_WIN32)
     &dpif_netlink_class,
@@ -618,6 +621,8 @@ dpif_port_del(struct dpif *dpif, odp_port_t port_no)
 
         netdev_ports_remove(port_no, dpif->dpif_class);
     } else {
+        VLOG_INFO("%s: port_del(%"PRIu32")",
+                    dpif_name(dpif), port_no);
         log_operation(dpif, "port_del", error);
     }
     return error;

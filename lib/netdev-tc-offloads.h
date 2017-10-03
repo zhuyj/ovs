@@ -39,4 +39,5 @@ int netdev_tc_flow_del(struct netdev *, const ovs_u128 *,
                         struct dpif_flow_stats *);
 int netdev_tc_init_flow_api(struct netdev *);
 
+bool netdev_tc_flow_is_offloaded(const ovs_u128 *ufid);
 #endif /* netdev-tc-offloads.h */

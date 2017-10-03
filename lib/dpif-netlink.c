@@ -236,6 +236,9 @@ static int dpif_netlink_vport_from_ofpbuf(struct dpif_netlink_vport *,
 static int dpif_netlink_port_query__(const struct dpif_netlink *dpif,
                                      odp_port_t port_no, const char *port_name,
                                      struct dpif_port *dpif_port);
+static void
+fix_both_dpif_flow(struct dpif_netlink *dpif, const ovs_u128 *ufid, struct match *match,
+                   struct dpif_flow *dpif_flow, struct dpif_flow_stats *stats);
 
 static struct dpif_netlink *
 dpif_netlink_cast(const struct dpif *dpif)
@@ -1419,7 +1422,7 @@ dpif_netlink_init_flow_put(struct dpif_netlink *dpif,
     if (put->flags & DPIF_FP_PROBE) {
         request->probe = true;
     }
-    request->nlmsg_flags = put->flags & DPIF_FP_MODIFY ? 0 : NLM_F_CREATE;
+    request->nlmsg_flags = put->flags & 0 /* DPIF_FP_MODIFY*/ ? 0 : NLM_F_CREATE;
 }
 
 static void
@@ -1774,6 +1777,7 @@ dpif_netlink_flow_dump_next(struct dpif_flow_dump_thread *thread_,
                                                    &ufid,
                                                    f,
                                                    dump->up.terse);
+            fix_both_dpif_flow(dpif, &ufid, &match, f, &stats);
             n_flows++;
         } else {
             dpif_netlink_advance_netdev_dump(thread);
@@ -2031,6 +2035,59 @@ dpif_netlink_operate__(struct dpif_netlink *dpif,
     return n_ops;
 }
 
+
+static void
+fix_both_dpif_flow(struct dpif_netlink *dpif, const ovs_u128 *ufid, struct match *match,
+                   struct dpif_flow *dpif_flow, struct dpif_flow_stats *stats)
+{
+    const struct nlattr *nla;
+    size_t left;
+    bool ovs_sw = false;
+
+    if (flow_tnl_dst_is_set(&match->flow.tunnel)) {
+        ovs_sw = true;
+    }
+    NL_ATTR_FOR_EACH(nla, left, dpif_flow->actions, dpif_flow->actions_len) {
+        if (nl_attr_type(nla) == OVS_ACTION_ATTR_SET) {
+            const struct nlattr *set = nl_attr_get(nla);
+            const size_t set_len = nl_attr_get_size(nla);
+            const struct nlattr *set_attr;
+            size_t set_left;
+
+            NL_ATTR_FOR_EACH_UNSAFE(set_attr, set_left, set, set_len) {
+                if (nl_attr_type(set_attr) == OVS_KEY_ATTR_TUNNEL) {
+                    ovs_sw = true;
+                }
+            }
+        }
+    }
+
+    if (ovs_sw) {
+            struct ofpbuf *nl_actions = NULL;
+            struct dpif_netlink_flow datapath_flow;
+            int error;
+
+            dpif_netlink_flow_init(&datapath_flow);
+            datapath_flow.ufid_present = true;
+            datapath_flow.ufid = *ufid;
+            error = dpif_netlink_flow_get(dpif, &datapath_flow,
+                                          &datapath_flow, &nl_actions);
+            if (!error && datapath_flow.stats) {
+                /* overwrite with dp stats */
+                dpif_netlink_flow_get_stats(&datapath_flow, &dpif_flow->stats);
+
+                /* add stats back */
+                if (stats->used &&
+                    stats->used > dpif_flow->stats.used) {
+                    dpif_flow->stats.used = stats->used;
+                }
+                dpif_flow->stats.n_packets += stats->n_packets;
+                dpif_flow->stats.n_bytes += stats->n_bytes;
+            }
+            ofpbuf_delete(nl_actions);
+    }
+}
+
 static int
 parse_flow_get(struct dpif_netlink *dpif, struct dpif_flow_get *get)
 {
@@ -2067,13 +2124,15 @@ parse_flow_get(struct dpif_netlink *dpif, struct dpif_flow_get *get)
     dpif_flow->actions = ofpbuf_at(get->buffer, 0, 0);
     dpif_flow->actions_len = nl_attr_get_size(actions);
 
+    fix_both_dpif_flow(dpif, get->ufid, &match, dpif_flow, &stats);
+
     return 0;
 }
 
+#define SEND_TO_OVS_DP -1
 static int
 parse_flow_put(struct dpif_netlink *dpif, struct dpif_flow_put *put)
 {
-    static struct vlog_rate_limit rl = VLOG_RATE_LIMIT_INIT(5, 20);
     const struct dpif_class *dpif_class = dpif->dpif.dpif_class;
     struct match match;
     odp_port_t in_port;
@@ -2081,7 +2140,7 @@ parse_flow_put(struct dpif_netlink *dpif, struct dpif_flow_put *put)
     size_t left;
     int outputs = 0;
     struct netdev *dev;
-    struct offload_info info;
+    struct offload_info info = { .ovs_sw = false, };
     ovs_be16 dst_port = 0;
     int err;
 
@@ -2106,6 +2165,26 @@ parse_flow_put(struct dpif_netlink *dpif, struct dpif_flow_put *put)
         return EOPNOTSUPP;
     }
 
+    //wasoffloaded = netdev_tc_flow_is_offloaded(CONST_CAST(ovs_u128 *, put->ufid));
+    netdev_flow_del(dev, put->ufid, put->stats);
+    put->flags &= ~DPIF_FP_MODIFY;
+    put->flags |= DPIF_FP_CREATE;
+    {
+        struct dpif_op *opp;
+        struct dpif_op op;
+
+        op.type = DPIF_OP_FLOW_DEL;
+        op.u.flow_del.key = put->key;
+        op.u.flow_del.key_len = put->key_len;
+        op.u.flow_del.ufid = put->ufid;
+        op.u.flow_del.pmd_id = put->pmd_id;
+        op.u.flow_del.stats = NULL;
+        op.u.flow_del.terse = false;
+
+        opp = &op;
+        dpif_netlink_operate__(dpif, &opp, 1);
+    }
+
     /* Get tunnel dst port and count outputs */
     NL_ATTR_FOR_EACH(nla, left, put->actions, put->actions_len) {
         if (nl_attr_type(nla) == OVS_ACTION_ATTR_OUTPUT) {
@@ -2115,7 +2194,7 @@ parse_flow_put(struct dpif_netlink *dpif, struct dpif_flow_put *put)
 
             outputs++;
             if (outputs > 1) {
-                VLOG_DBG_RL(&rl, "offloading multiple ports isn't supported");
+                VLOG_DBG("offloading multiple ports isn't supported");
                 err = EOPNOTSUPP;
                 goto out;
             }
@@ -2131,7 +2210,21 @@ parse_flow_put(struct dpif_netlink *dpif, struct dpif_flow_put *put)
                 dst_port = tnl_cfg->dst_port;
             }
             netdev_close(outdev);
+        } else if (nl_attr_type(nla) == OVS_ACTION_ATTR_SET) {
+            const struct nlattr *set = nl_attr_get(nla);
+            const size_t set_len = nl_attr_get_size(nla);
+            const struct nlattr *set_attr;
+            size_t set_left;
+
+            NL_ATTR_FOR_EACH_UNSAFE(set_attr, set_left, set, set_len) {
+                if (nl_attr_type(set_attr) == OVS_KEY_ATTR_TUNNEL) {
+                    info.ovs_sw = true;
+                }
+            }
         }
+    }
+    if (flow_tnl_dst_is_set(&match.flow.tunnel)) {
+        info.ovs_sw = true;
     }
 
     info.dpif_class = dpif_class;
@@ -2141,48 +2234,21 @@ parse_flow_put(struct dpif_netlink *dpif, struct dpif_flow_put *put)
                           put->actions_len,
                           CONST_CAST(ovs_u128 *, put->ufid),
                           &info, put->stats);
-
     if (!err) {
-        if (put->flags & DPIF_FP_MODIFY) {
-            struct dpif_op *opp;
-            struct dpif_op op;
-
-            op.type = DPIF_OP_FLOW_DEL;
-            op.u.flow_del.key = put->key;
-            op.u.flow_del.key_len = put->key_len;
-            op.u.flow_del.ufid = put->ufid;
-            op.u.flow_del.pmd_id = put->pmd_id;
-            op.u.flow_del.stats = NULL;
-            op.u.flow_del.terse = false;
-
-            opp = &op;
-            dpif_netlink_operate__(dpif, &opp, 1);
-        }
-
-        VLOG_DBG("added flow");
+        VLOG_DBG("offloaded!");
     } else if (err != EEXIST) {
-        VLOG_ERR_RL(&rl, "failed to offload flow: %s", ovs_strerror(err));
+        VLOG_ERR("failed to offload flow: %s", ovs_strerror(err));
+    } else {
+        VLOG_DBG("already offloaded!");
+        err = 0;
     }
 
 out:
-    if (err && err != EEXIST && (put->flags & DPIF_FP_MODIFY)) {
-        /* Modified rule can't be offloaded, try and delete from HW */
-        int del_err = netdev_flow_del(dev, put->ufid, put->stats);
-
-        if (!del_err) {
-            /* Delete from hw success, so old flow was offloaded.
-             * Change flags to create the flow in kernel */
-            put->flags &= ~DPIF_FP_MODIFY;
-            put->flags |= DPIF_FP_CREATE;
-        } else if (del_err != ENOENT) {
-            VLOG_ERR_RL(&rl, "failed to delete offloaded flow: %s",
-                        ovs_strerror(del_err));
-            /* stop proccesing the flow in kernel */
-            err = 0;
-        }
-    }
-
     netdev_close(dev);
+
+    if (info.ovs_sw) {
+        err = SEND_TO_OVS_DP;
+    }
 
     return err;
 }
@@ -2191,6 +2257,16 @@ static int
 try_send_to_netdev(struct dpif_netlink *dpif, struct dpif_op *op)
 {
     int err = EOPNOTSUPP;
+
+#define UUID_LEN 36
+#define UUID_FMT "%08x-%04x-%04x-%04x-%04x%08x"
+#define UUID_ARGS(UUID)                             \
+    ((unsigned int) ((UUID)->parts[0])),            \
+    ((unsigned int) ((UUID)->parts[1] >> 16)),      \
+    ((unsigned int) ((UUID)->parts[1] & 0xffff)),   \
+    ((unsigned int) ((UUID)->parts[2] >> 16)),      \
+    ((unsigned int) ((UUID)->parts[2] & 0xffff)),   \
+    ((unsigned int) ((UUID)->parts[3]))
 
     switch (op->type) {
     case DPIF_OP_FLOW_PUT: {

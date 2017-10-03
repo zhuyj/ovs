@@ -29,6 +29,7 @@
 #include <net/if.h>
 #include <sys/ioctl.h>
 #include <sys/types.h>
+#include <linux/rtnetlink.h>
 #endif
 
 #include "cmap.h"
@@ -537,6 +538,27 @@ netdev_get_tunnel_config(const struct netdev *netdev)
     if (netdev->netdev_class->get_tunnel_config) {
         return netdev->netdev_class->get_tunnel_config(netdev);
     } else {
+        char *n = strstr(netdev_get_name(netdev), "dummy_");
+
+        if (n) {
+            struct netdev *dev;
+            const struct netdev_tunnel_config *cfg = NULL;
+
+            n += strlen("dummy_");
+
+            if (netdev_open(n, "vxlan", &dev)) {
+                VLOG_ERR("failed to open backing vxlan netdev %s", n);
+                return NULL;
+            }
+            if (!dev->netdev_class->get_tunnel_config ||
+                !(cfg = dev->netdev_class->get_tunnel_config(dev))) {
+                VLOG_ERR("failed to get tnl cfg of backing vxlan netdev %s",
+                         n);
+                return NULL;
+            }
+
+            return cfg;
+        }
         return NULL;
     }
 }
@@ -2211,7 +2233,50 @@ netdev_ports_insert(struct netdev *netdev, const struct dpif_class *dpif_class,
     int ifindex = netdev_get_ifindex(netdev);
 
     if (ifindex < 0) {
-        return ENODEV;
+        if (!strcmp(netdev_get_type(netdev), "vxlan") && !strstr(netdev_get_name(netdev), "vxlan_sys_")) {
+            struct netdev *dev;
+            char namebuf[64] = "dummy_";
+
+            strcat(namebuf, netdev_get_name(netdev));
+
+            if (netdev_open(namebuf, NULL, &dev)) {
+                size_t linkinfo_off;
+                struct ifinfomsg *ifinfo;
+                struct ofpbuf request;
+                int err;
+
+                ofpbuf_init(&request, 0);
+                nl_msg_put_nlmsghdr(&request, 0, RTM_NEWLINK, NLM_F_REQUEST | NLM_F_ACK | NLM_F_CREATE | NLM_F_EXCL);
+                ifinfo = ofpbuf_put_zeros(&request, sizeof(struct ifinfomsg));
+                ifinfo->ifi_change = ifinfo->ifi_flags = IFF_UP;
+                nl_msg_put_string(&request, IFLA_IFNAME, namebuf);
+                linkinfo_off = nl_msg_start_nested(&request, IFLA_LINKINFO);
+                nl_msg_put_string(&request, IFLA_INFO_KIND, "dummy");
+                nl_msg_end_nested(&request, linkinfo_off);
+
+                err = nl_transact(NETLINK_ROUTE, &request, NULL);
+                ofpbuf_uninit(&request);
+
+                if (err && err != EEXIST) {
+                    VLOG_ERR("failed to create dummy device %s", namebuf);
+                    return ENODEV;
+                }
+                err = 0;
+
+                if (netdev_open(namebuf, NULL, &dev)) {
+                    VLOG_ERR("failed to open new dummy device %s", namebuf);
+                    return ENODEV;
+                }
+            }
+            netdev = dev;
+
+            ifindex = netdev_get_ifindex(netdev);
+            if (ifindex < 0) {
+                netdev_close(netdev);
+                return ENODEV;
+            }
+        }
+        else return ENODEV;
     }
 
     data = xzalloc(sizeof *data);
@@ -2251,6 +2316,7 @@ netdev_ports_get(odp_port_t port_no, const struct dpif_class *dpif_class)
         ret = netdev_ref(data->netdev);
     }
     ovs_mutex_unlock(&netdev_hmap_mutex);
+
 
     return ret;
 }

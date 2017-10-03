@@ -124,6 +124,7 @@ static struct ovs_mutex ufid_lock = OVS_MUTEX_INITIALIZER;
  * @handle: tc handle
  * @ifindex: netdev ifindex.
  * @netdev: netdev associated with the tc rule
+ * @ovs_sw: send this flow to ovs sw dp as well
  */
 struct ufid_tc_data {
     struct hmap_node ufid_node;
@@ -133,6 +134,7 @@ struct ufid_tc_data {
     uint32_t handle;
     int ifindex;
     struct netdev *netdev;
+    bool ovs_sw;
 };
 
 /* Remove matching ufid entry from ufid_tc hashmap. */
@@ -165,7 +167,7 @@ del_ufid_tc_mapping(const ovs_u128 *ufid)
  * If entry exists already it will be replaced. */
 static void
 add_ufid_tc_mapping(const ovs_u128 *ufid, int prio, int handle,
-                    struct netdev *netdev, int ifindex)
+                    struct netdev *netdev, int ifindex, struct offload_info *info)
 {
     size_t ufid_hash = hash_bytes(ufid, sizeof *ufid, 0);
     size_t tc_hash = hash_int(hash_int(prio, handle), ifindex);
@@ -178,6 +180,7 @@ add_ufid_tc_mapping(const ovs_u128 *ufid, int prio, int handle,
     new_data->handle = handle;
     new_data->netdev = netdev_ref(netdev);
     new_data->ifindex = ifindex;
+    new_data->ovs_sw = info->ovs_sw;
 
     ovs_mutex_lock(&ufid_lock);
     hmap_insert(&ufid_tc, &new_data->ufid_node, ufid_hash);
@@ -195,7 +198,8 @@ add_ufid_tc_mapping(const ovs_u128 *ufid, int prio, int handle,
  * Otherwise returns 0.
  */
 static int
-get_ufid_tc_mapping(const ovs_u128 *ufid, int *prio, struct netdev **netdev)
+get_ufid_tc_mapping(const ovs_u128 *ufid, int *prio, struct netdev **netdev,
+                    bool *ovs_sw)
 {
     size_t ufid_hash = hash_bytes(ufid, sizeof *ufid, 0);
     struct ufid_tc_data *data;
@@ -209,6 +213,9 @@ get_ufid_tc_mapping(const ovs_u128 *ufid, int *prio, struct netdev **netdev)
             }
             if (netdev) {
                 *netdev = netdev_ref(data->netdev);
+            }
+            if (ovs_sw) {
+                *ovs_sw = data->ovs_sw;
             }
             handle = data->handle;
             break;
@@ -570,6 +577,8 @@ netdev_tc_flow_dump_next(struct netdev_flow_dump *dump,
 
         if (flower.act_cookie.len) {
             *ufid = *((ovs_u128 *) flower.act_cookie.data);
+        } else if (in_dpctl) {
+            memset(ufid, 0, sizeof(*ufid));
         } else if (!find_ufid(flower.prio, flower.handle, netdev, ufid)) {
             continue;
         }
@@ -848,7 +857,7 @@ netdev_tc_flow_put(struct netdev *netdev, struct match *match,
 
     ifindex = netdev_get_ifindex(netdev);
     if (ifindex < 0) {
-        VLOG_ERR_RL(&error_rl, "flow_put: failed to get ifindex for %s: %s",
+        VLOG_ERR("flow_put: failed to get ifindex for %s: %s",
                     netdev_get_name(netdev), ovs_strerror(-ifindex));
         return -ifindex;
     }
@@ -856,7 +865,7 @@ netdev_tc_flow_put(struct netdev *netdev, struct match *match,
     memset(&flower, 0, sizeof flower);
 
     if (flow_tnl_dst_is_set(&key->tunnel)) {
-        VLOG_DBG_RL(&rl,
+        VLOG_DBG(
                     "tunnel: id %#" PRIx64 " src " IP_FMT
                     " dst " IP_FMT " tp_src %d tp_dst %d",
                     ntohll(tnl->tun_id),
@@ -979,7 +988,6 @@ netdev_tc_flow_put(struct netdev *netdev, struct match *match,
         if (nl_attr_type(nla) == OVS_ACTION_ATTR_OUTPUT) {
             odp_port_t port = nl_attr_get_odp_port(nla);
             struct netdev *outdev = netdev_ports_get(port, info->dpif_class);
-
             flower.ifindex_out = netdev_get_ifindex(outdev);
             flower.set.tp_dst = info->tp_dst_port;
             netdev_close(outdev);
@@ -1014,7 +1022,7 @@ netdev_tc_flow_put(struct netdev *netdev, struct match *match,
         }
     }
 
-    handle = get_ufid_tc_mapping(ufid, &prio, NULL);
+    handle = get_ufid_tc_mapping(ufid, &prio, NULL, NULL);
     if (handle && prio) {
         VLOG_DBG_RL(&rl, "updating old handle: %d prio: %d", handle, prio);
         tc_del_filter(ifindex, prio, handle);
@@ -1031,12 +1039,22 @@ netdev_tc_flow_put(struct netdev *netdev, struct match *match,
     flower.act_cookie.data = ufid;
     flower.act_cookie.len = sizeof *ufid;
 
-    err = tc_replace_flower(ifindex, prio, handle, &flower);
+    err = tc_replace_flower(ifindex, prio, handle, &flower, info->ovs_sw);
     if (!err) {
-        add_ufid_tc_mapping(ufid, flower.prio, flower.handle, netdev, ifindex);
+        add_ufid_tc_mapping(ufid, flower.prio, flower.handle, netdev, ifindex, info);
     }
 
     return err;
+}
+
+bool
+netdev_tc_flow_is_offloaded(const ovs_u128 *ufid)
+{
+    struct netdev *dev;
+    int handle, prio = 0;
+
+    handle = get_ufid_tc_mapping(ufid, &prio, &dev, NULL);
+    return (handle != 0);
 }
 
 int
@@ -1056,7 +1074,7 @@ netdev_tc_flow_get(struct netdev *netdev OVS_UNUSED,
     int handle;
     int err;
 
-    handle = get_ufid_tc_mapping(ufid, &prio, &dev);
+    handle = get_ufid_tc_mapping(ufid, &prio, &dev, NULL);
     if (!handle) {
         return ENOENT;
     }
@@ -1098,8 +1116,9 @@ netdev_tc_flow_del(struct netdev *netdev OVS_UNUSED,
     int ifindex;
     int handle;
     int error;
+    bool ovs_sw = false;
 
-    handle = get_ufid_tc_mapping(ufid, &prio, &dev);
+    handle = get_ufid_tc_mapping(ufid, &prio, &dev, &ovs_sw);
     if (!handle) {
         return ENOENT;
     }
@@ -1119,6 +1138,10 @@ netdev_tc_flow_del(struct netdev *netdev OVS_UNUSED,
 
     if (stats) {
         memset(stats, 0, sizeof *stats);
+    }
+
+    if (ovs_sw) {
+        return ENOENT;
     }
     return error;
 }

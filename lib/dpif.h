@@ -593,6 +593,7 @@ struct dpif_flow {
 };
 int dpif_flow_dump_next(struct dpif_flow_dump_thread *,
                         struct dpif_flow *flows, int max_flows);
+extern bool in_dpctl;
 
 #define DPIF_FLOW_BUFSIZE 2048
 

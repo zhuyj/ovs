@@ -816,6 +816,9 @@ dpctl_dump_flows(int argc, const char *argv[], struct dpctl_params *dpctl_p)
     int lastargc = 0;
     int error;
 
+    if (dpctl_p->is_appctl == false) {
+        in_dpctl = true;
+    }
     while (argc > 1 && lastargc != argc) {
         lastargc = argc;
         if (!strncmp(argv[argc - 1], "filter=", 7) && !filter) {

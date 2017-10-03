@@ -942,7 +942,7 @@ udpif_revalidator(void *arg)
                           duration);
             }
 
-            poll_timer_wait_until(start_time + MIN(ofproto_max_idle, 500));
+            poll_timer_wait_until(start_time + MIN(ofproto_max_idle, 1000));
             seq_wait(udpif->reval_seq, last_reval_seq);
             latch_wait(&udpif->exit_latch);
             latch_wait(&udpif->pause_latch);
@@ -1089,7 +1089,7 @@ upcall_receive(struct upcall *upcall, const struct dpif_backer *backer,
     upcall->flow = flow;
     upcall->packet = packet;
     upcall->ufid = ufid;
-    upcall->pmd_id = pmd_id;
+    upcall->pmd_id = 0; //pmd_id;
     upcall->type = type;
     upcall->userdata = userdata;
     ofpbuf_use_stub(&upcall->odp_actions, upcall->odp_actions_stub,
@@ -1554,7 +1554,7 @@ ukey_create__(const struct nlattr *key, size_t key_len,
     ukey->mask_len = mask_len;
     ukey->ufid_present = ufid_present;
     ukey->ufid = *ufid;
-    ukey->pmd_id = pmd_id;
+    ukey->pmd_id = 0; //pmd_id;
     ukey->hash = get_ukey_hash(&ukey->ufid, pmd_id);
 
     ovsrcu_init(&ukey->actions, NULL);
@@ -1610,7 +1610,7 @@ ukey_create_from_upcall(struct upcall *upcall, struct flow_wildcards *wc)
     }
 
     return ukey_create__(keybuf.data, keybuf.size, maskbuf.data, maskbuf.size,
-                         true, upcall->ufid, upcall->pmd_id,
+                         true, upcall->ufid, 0, //upcall->pmd_id,
                          &upcall->put_actions, upcall->dump_seq,
                          upcall->reval_seq, 0,
                          upcall->have_recirc_ref ? upcall->recirc->id : 0,
@@ -1638,7 +1638,7 @@ ukey_create_from_dpif_flow(const struct udpif *udpif,
         ofpbuf_use_stack(&buf, &stub, sizeof stub);
         err = dpif_flow_get(udpif->dpif, flow->key, flow->key_len,
                             flow->ufid_present ? &flow->ufid : NULL,
-                            flow->pmd_id, &buf, &full_flow);
+                            0 /*flow->pmd_id*/, &buf, &full_flow);
         if (err) {
             return err;
         }
@@ -1666,7 +1666,7 @@ ukey_create_from_dpif_flow(const struct udpif *udpif,
     ofpbuf_use_const(&actions, &flow->actions, flow->actions_len);
     *ukey = ukey_create__(flow->key, flow->key_len,
                           flow->mask, flow->mask_len, flow->ufid_present,
-                          &flow->ufid, flow->pmd_id, &actions, dump_seq,
+                          &flow->ufid, 0 /*flow->pmd_id */, &actions, dump_seq,
                           reval_seq, flow->stats.used, 0, NULL);
 
     return 0;
@@ -1721,7 +1721,7 @@ ukey_install__(struct udpif *udpif, struct udpif_key *new_ukey)
     idx = new_ukey->hash % N_UMAPS;
     umap = &udpif->ukeys[idx];
     ovs_mutex_lock(&umap->mutex);
-    old_ukey = ukey_lookup(udpif, &new_ukey->ufid, new_ukey->pmd_id);
+    old_ukey = ukey_lookup(udpif, &new_ukey->ufid, 0 /*new_ukey->pmd_id*/);
     if (old_ukey) {
         /* Uncommon case: A ukey is already installed with the same UFID. */
         if (old_ukey->key_len == new_ukey->key_len
@@ -1831,7 +1831,7 @@ ukey_acquire(struct udpif *udpif, const struct dpif_flow *flow,
     struct udpif_key *ukey;
     int retval;
 
-    ukey = ukey_lookup(udpif, &flow->ufid, flow->pmd_id);
+    ukey = ukey_lookup(udpif, &flow->ufid, 0/*flow->pmd_id*/);
     if (ukey) {
         retval = ovs_mutex_trylock(&ukey->mutex);
     } else {
@@ -2163,7 +2163,7 @@ delete_op_init__(struct udpif *udpif, struct ukey_op *op,
     op->dop.u.flow_del.key = flow->key;
     op->dop.u.flow_del.key_len = flow->key_len;
     op->dop.u.flow_del.ufid = flow->ufid_present ? &flow->ufid : NULL;
-    op->dop.u.flow_del.pmd_id = flow->pmd_id;
+    op->dop.u.flow_del.pmd_id = 0; //flow->pmd_id;
     op->dop.u.flow_del.stats = &op->stats;
     op->dop.u.flow_del.terse = udpif_use_ufid(udpif);
 }
@@ -2176,7 +2176,7 @@ delete_op_init(struct udpif *udpif, struct ukey_op *op, struct udpif_key *ukey)
     op->dop.u.flow_del.key = ukey->key;
     op->dop.u.flow_del.key_len = ukey->key_len;
     op->dop.u.flow_del.ufid = ukey->ufid_present ? &ukey->ufid : NULL;
-    op->dop.u.flow_del.pmd_id = ukey->pmd_id;
+    op->dop.u.flow_del.pmd_id = 0; //ukey->pmd_id;
     op->dop.u.flow_del.stats = &op->stats;
     op->dop.u.flow_del.terse = udpif_use_ufid(udpif);
 }
@@ -2193,7 +2193,7 @@ put_op_init(struct ukey_op *op, struct udpif_key *ukey,
     op->dop.u.flow_put.mask = ukey->mask;
     op->dop.u.flow_put.mask_len = ukey->mask_len;
     op->dop.u.flow_put.ufid = ukey->ufid_present ? &ukey->ufid : NULL;
-    op->dop.u.flow_put.pmd_id = ukey->pmd_id;
+    op->dop.u.flow_put.pmd_id = 0; //ukey->pmd_id;
     op->dop.u.flow_put.stats = NULL;
     ukey_get_actions(ukey, &op->dop.u.flow_put.actions,
                      &op->dop.u.flow_put.actions_len);
@@ -2578,7 +2578,7 @@ dp_purge_cb(void *aux, unsigned pmd_id)
         size_t n_ops = 0;
 
         CMAP_FOR_EACH(ukey, cmap_node, &umap->cmap) {
-            if (ukey->pmd_id == pmd_id) {
+            //if (ukey->pmd_id == pmd_id) {
                 delete_op_init(udpif, &ops[n_ops++], ukey);
                 transition_ukey(ukey, UKEY_EVICTING);
 
@@ -2586,7 +2586,7 @@ dp_purge_cb(void *aux, unsigned pmd_id)
                     push_ukey_ops(udpif, umap, ops, n_ops);
                     n_ops = 0;
                 }
-            }
+            //}
         }
 
         if (n_ops) {

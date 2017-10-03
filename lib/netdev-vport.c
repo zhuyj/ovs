@@ -865,7 +865,8 @@ netdev_vport_get_ifindex(const struct netdev *netdev_)
     return linux_get_ifindex(name);
 }
 
-#define NETDEV_VPORT_GET_IFINDEX netdev_vport_get_ifindex
+#define NETDEV_VPORT_GET_IFINDEX NULL
+//#define NETDEV_VPORT_GET_IFINDEX netdev_vport_get_ifindex
 #define NETDEV_FLOW_OFFLOAD_API LINUX_FLOW_OFFLOAD_API
 #else /* !__linux__ */
 #define NETDEV_VPORT_GET_IFINDEX NULL
