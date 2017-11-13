@@ -285,7 +285,7 @@ struct dpif_class {
      *
      * If 'type' isn't null, dumps only the flows of the given type. */
     struct dpif_flow_dump *(*flow_dump_create)(const struct dpif *dpif,
-                                               bool terse, char *type);
+                                               bool terse, char *type, int threads);
     int (*flow_dump_destroy)(struct dpif_flow_dump *dump);
 
     struct dpif_flow_dump_thread *(*flow_dump_thread_create)(

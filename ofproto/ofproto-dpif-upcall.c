@@ -893,7 +893,7 @@ udpif_revalidator(void *arg)
 
                 terse_dump = udpif_use_ufid(udpif);
                 udpif->dump = dpif_flow_dump_create(udpif->dpif, terse_dump,
-                                                    NULL);
+                                                    NULL, udpif->n_revalidators);
             }
         }
 

@@ -568,7 +568,7 @@ int dpif_flow_get(struct dpif *,
  * All error reporting is deferred to the call to dpif_flow_dump_destroy().
  */
 struct dpif_flow_dump *dpif_flow_dump_create(const struct dpif *, bool terse,
-                                             char *type);
+                                             char *type, int threads);
 int dpif_flow_dump_destroy(struct dpif_flow_dump *);
 
 struct dpif_flow_dump_thread *dpif_flow_dump_thread_create(

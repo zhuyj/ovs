@@ -887,7 +887,7 @@ dpctl_dump_flows(int argc, const char *argv[], struct dpctl_params *dpctl_p)
 
     ds_init(&ds);
     memset(&f, 0, sizeof f);
-    flow_dump = dpif_flow_dump_create(dpif, false, (type ? type : "dpctl"));
+    flow_dump = dpif_flow_dump_create(dpif, false, (type ? type : "dpctl"), 1);
     flow_dump_thread = dpif_flow_dump_thread_create(flow_dump);
     while (dpif_flow_dump_next(flow_dump_thread, &f, 1)) {
         if (filter) {

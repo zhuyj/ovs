@@ -1463,6 +1463,8 @@ struct dpif_netlink_flow_dump {
     struct nl_dump nl_dump;
     atomic_int status;
     struct netdev_flow_dump **netdev_dumps;
+    struct ovs_barrier netdev_barrier;
+    bool first;
     int netdev_dumps_num;                    /* Number of netdev_flow_dumps */
     struct ovs_mutex netdev_lock;            /* Guards the following. */
     int netdev_current_dump OVS_GUARDED;     /* Shared current dump */
@@ -1477,7 +1479,7 @@ dpif_netlink_flow_dump_cast(struct dpif_flow_dump *dump)
 
 static void
 start_netdev_dump(const struct dpif *dpif_,
-                  struct dpif_netlink_flow_dump *dump)
+                  struct dpif_netlink_flow_dump *dump, int threads)
 {
     ovs_mutex_init(&dump->netdev_lock);
 
@@ -1492,6 +1494,8 @@ start_netdev_dump(const struct dpif *dpif_,
     dump->netdev_dumps
         = netdev_ports_flow_dump_create(dpif_->dpif_class,
                                         &dump->netdev_dumps_num);
+    ovs_barrier_init(&dump->netdev_barrier, threads);
+    dump->first = true;
     ovs_mutex_unlock(&dump->netdev_lock);
 }
 
@@ -1512,7 +1516,7 @@ dpif_netlink_get_dump_type(char *str) {
 
 static struct dpif_flow_dump *
 dpif_netlink_flow_dump_create(const struct dpif *dpif_, bool terse,
-                              char *type)
+                              char *type, int threads)
 {
     const struct dpif_netlink *dpif = dpif_netlink_cast(dpif_);
     struct dpif_netlink_flow_dump *dump;
@@ -1539,7 +1543,7 @@ dpif_netlink_flow_dump_create(const struct dpif *dpif_, bool terse,
     atomic_init(&dump->status, 0);
     dump->up.terse = terse;
 
-    start_netdev_dump(dpif_, dump);
+    start_netdev_dump(dpif_, dump, threads);
 
     return &dump->up;
 }
@@ -1550,6 +1554,8 @@ dpif_netlink_flow_dump_destroy(struct dpif_flow_dump *dump_)
     struct dpif_netlink_flow_dump *dump = dpif_netlink_flow_dump_cast(dump_);
     unsigned int nl_status = 0;
     int dump_status;
+
+    ovs_barrier_destroy(&dump->netdev_barrier);
 
     if (dump->type & DUMP_OVS_FLOWS) {
         nl_status = nl_dump_done(&dump->nl_dump);
@@ -1782,6 +1788,15 @@ dpif_netlink_flow_dump_next(struct dpif_flow_dump_thread *thread_,
         } else {
             dpif_netlink_advance_netdev_dump(thread);
         }
+    }
+
+    if (thread->netdev_done && dump->first) {
+	if (n_flows)
+		return n_flows;
+
+	ovs_barrier_block(&dump->netdev_barrier);
+
+	dump->first = false;
     }
 
     if (!(dump->type & DUMP_OVS_FLOWS)) {
