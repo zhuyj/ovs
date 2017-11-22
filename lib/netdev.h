@@ -22,6 +22,8 @@
 #include "packets.h"
 #include "flow.h"
 
+extern bool in_dpctl;
+
 #ifdef  __cplusplus
 extern "C" {
 #endif

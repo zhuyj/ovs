@@ -67,9 +67,6 @@ COVERAGE_DEFINE(dpif_meter_set);
 COVERAGE_DEFINE(dpif_meter_get);
 COVERAGE_DEFINE(dpif_meter_del);
 
-
-bool in_dpctl = false;
-
 static const struct dpif_class *base_dpif_classes[] = {
 #if defined(__linux__) || defined(_WIN32)
     &dpif_netlink_class,

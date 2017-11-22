@@ -59,6 +59,8 @@
 #include "tc.h"
 #endif
 
+bool in_dpctl = false;
+
 VLOG_DEFINE_THIS_MODULE(netdev);
 
 COVERAGE_DEFINE(netdev_received);
@@ -531,36 +533,24 @@ netdev_get_config(const struct netdev *netdev, struct smap *args)
     return error;
 }
 
+static struct netdev_tunnel_config temp_cfg = { .dst_port = 4789 };
+
 const struct netdev_tunnel_config *
 netdev_get_tunnel_config(const struct netdev *netdev)
     OVS_EXCLUDED(netdev_mutex)
 {
+    char *n = strstr(netdev_get_name(netdev), "dummy_");
+    if (n) {
+            sscanf(n + strlen("dummy_"), "%d", &temp_cfg.dst_port);
+            temp_cfg.dst_port = htons(temp_cfg.dst_port);
+            return &temp_cfg;
+    }
+
     if (netdev->netdev_class->get_tunnel_config) {
         return netdev->netdev_class->get_tunnel_config(netdev);
-    } else {
-        char *n = strstr(netdev_get_name(netdev), "dummy_");
-
-        if (n) {
-            struct netdev *dev;
-            const struct netdev_tunnel_config *cfg = NULL;
-
-            n += strlen("dummy_");
-
-            if (netdev_open(n, "vxlan", &dev)) {
-                VLOG_ERR("failed to open backing vxlan netdev %s", n);
-                return NULL;
-            }
-            if (!dev->netdev_class->get_tunnel_config ||
-                !(cfg = dev->netdev_class->get_tunnel_config(dev))) {
-                VLOG_ERR("failed to get tnl cfg of backing vxlan netdev %s",
-                         n);
-                return NULL;
-            }
-
-            return cfg;
-        }
-        return NULL;
     }
+
+    return NULL;
 }
 
 /* Returns the id of the numa node the 'netdev' is on.  If the function
@@ -2231,52 +2221,70 @@ netdev_ports_insert(struct netdev *netdev, const struct dpif_class *dpif_class,
     struct port_to_netdev_data *data;
     struct ifindex_to_port_data *ifidx;
     int ifindex = netdev_get_ifindex(netdev);
+    const struct netdev_tunnel_config *cfg;
+    char *port_str = 0;
+    char namebuf[64] = "null";
+    struct netdev *dev;
 
     if (ifindex < 0) {
-        if (!strcmp(netdev_get_type(netdev), "vxlan") && !strstr(netdev_get_name(netdev), "vxlan_sys_")) {
-            struct netdev *dev;
-            char namebuf[64] = "dummy_";
+        VLOG_DBG("%s %d %s(%d): %s %s", __FILE__, __LINE__, __func__, dpif_port->port_no, netdev_get_type(netdev), netdev_get_name(netdev));
 
-            strcat(namebuf, netdev_get_name(netdev));
+        if (strcmp(netdev_get_type(netdev), "vxlan"))
+            return ENODEV;
+
+        port_str = strstr(netdev_get_name(netdev), "vxlan_sys_");
+        cfg = netdev_get_tunnel_config(netdev);
+        if (!cfg || !cfg->dst_port)
+            return ENODEV;
+
+        if (port_str) {
+            sprintf(namebuf, "dummy_%s", port_str + strlen("vxlan_sys_"));
+        } else {
+            sprintf(namebuf, "dummy_%d", ntohs(cfg->dst_port));
+        }
+        VLOG_DBG("%s %d %s(%d): type: %s name:  %s, cfg port: %d, opening: %s, dpctl: %d", __FILE__, __LINE__, __func__, dpif_port->port_no, netdev_get_type(netdev), netdev_get_name(netdev), ntohs(cfg->dst_port), namebuf, in_dpctl);
+
+        if (netdev_open(namebuf, NULL, &dev)) {
+            size_t linkinfo_off;
+            struct ifinfomsg *ifinfo;
+            struct ofpbuf request;
+            int err;
+
+            if (in_dpctl || port_str) {
+                return ENODEV;
+            }
+
+            ofpbuf_init(&request, 0);
+            nl_msg_put_nlmsghdr(&request, 0, RTM_NEWLINK, NLM_F_REQUEST | NLM_F_ACK | NLM_F_CREATE | NLM_F_EXCL);
+            ifinfo = ofpbuf_put_zeros(&request, sizeof(struct ifinfomsg));
+            ifinfo->ifi_change = ifinfo->ifi_flags = IFF_UP;
+            nl_msg_put_string(&request, IFLA_IFNAME, namebuf);
+            linkinfo_off = nl_msg_start_nested(&request, IFLA_LINKINFO);
+            nl_msg_put_string(&request, IFLA_INFO_KIND, "dummy");
+            nl_msg_end_nested(&request, linkinfo_off);
+
+            err = nl_transact(NETLINK_ROUTE, &request, NULL);
+            ofpbuf_uninit(&request);
+
+            if (err && err != EEXIST) {
+                VLOG_ERR("failed to create dummy device %s", namebuf);
+                return ENODEV;
+            }
+            err = 0;
 
             if (netdev_open(namebuf, NULL, &dev)) {
-                size_t linkinfo_off;
-                struct ifinfomsg *ifinfo;
-                struct ofpbuf request;
-                int err;
-
-                ofpbuf_init(&request, 0);
-                nl_msg_put_nlmsghdr(&request, 0, RTM_NEWLINK, NLM_F_REQUEST | NLM_F_ACK | NLM_F_CREATE | NLM_F_EXCL);
-                ifinfo = ofpbuf_put_zeros(&request, sizeof(struct ifinfomsg));
-                ifinfo->ifi_change = ifinfo->ifi_flags = IFF_UP;
-                nl_msg_put_string(&request, IFLA_IFNAME, namebuf);
-                linkinfo_off = nl_msg_start_nested(&request, IFLA_LINKINFO);
-                nl_msg_put_string(&request, IFLA_INFO_KIND, "dummy");
-                nl_msg_end_nested(&request, linkinfo_off);
-
-                err = nl_transact(NETLINK_ROUTE, &request, NULL);
-                ofpbuf_uninit(&request);
-
-                if (err && err != EEXIST) {
-                    VLOG_ERR("failed to create dummy device %s", namebuf);
-                    return ENODEV;
-                }
-                err = 0;
-
-                if (netdev_open(namebuf, NULL, &dev)) {
-                    VLOG_ERR("failed to open new dummy device %s", namebuf);
-                    return ENODEV;
-                }
-            }
-            netdev = dev;
-
-            ifindex = netdev_get_ifindex(netdev);
-            if (ifindex < 0) {
-                netdev_close(netdev);
+                VLOG_ERR("failed to open new dummy device %s", namebuf);
                 return ENODEV;
             }
         }
-        else return ENODEV;
+
+        netdev = dev;
+
+        ifindex = netdev_get_ifindex(netdev);
+        if (ifindex < 0) {
+            netdev_close(netdev);
+            return ENODEV;
+        }
     }
 
     data = xzalloc(sizeof *data);
@@ -2285,8 +2293,11 @@ netdev_ports_insert(struct netdev *netdev, const struct dpif_class *dpif_class,
     ovs_mutex_lock(&netdev_hmap_mutex);
     if (netdev_ports_lookup(dpif_port->port_no, dpif_class)) {
         ovs_mutex_unlock(&netdev_hmap_mutex);
+        VLOG_DBG("%s %d %s(%d) exists", __FILE__, __LINE__, __func__, dpif_port->port_no);
         return EEXIST;
     }
+
+    VLOG_DBG("%s %d %s mapping: %d -> %s", __FILE__, __LINE__, __func__, dpif_port->port_no, netdev_get_name(netdev));
 
     data->netdev = netdev_ref(netdev);
     data->dpif_class = dpif_class;
@@ -2330,6 +2341,7 @@ netdev_ports_remove(odp_port_t port_no, const struct dpif_class *dpif_class)
     ovs_mutex_lock(&netdev_hmap_mutex);
 
     data = netdev_ports_lookup(port_no, dpif_class);
+    VLOG_DBG("%s %d %s(%d): found: %d", __FILE__, __LINE__, __func__, port_no, !!(data != 0));
 
     if (data) {
         int ifindex = netdev_get_ifindex(data->netdev);
