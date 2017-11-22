@@ -1464,7 +1464,7 @@ struct dpif_netlink_flow_dump {
     atomic_int status;
     struct netdev_flow_dump **netdev_dumps;
     struct ovs_barrier netdev_barrier;
-    bool first;
+    bool first_barrier;
     int netdev_dumps_num;                    /* Number of netdev_flow_dumps */
     struct ovs_mutex netdev_lock;            /* Guards the following. */
     int netdev_current_dump OVS_GUARDED;     /* Shared current dump */
@@ -1481,7 +1481,9 @@ static void
 start_netdev_dump(const struct dpif *dpif_,
                   struct dpif_netlink_flow_dump *dump, int threads)
 {
+    dump->first_barrier = true;
     ovs_mutex_init(&dump->netdev_lock);
+    ovs_barrier_init(&dump->netdev_barrier, threads);
 
     if (!(dump->type & DUMP_OFFLOADED_FLOWS)) {
         dump->netdev_dumps_num = 0;
@@ -1494,8 +1496,6 @@ start_netdev_dump(const struct dpif *dpif_,
     dump->netdev_dumps
         = netdev_ports_flow_dump_create(dpif_->dpif_class,
                                         &dump->netdev_dumps_num);
-    ovs_barrier_init(&dump->netdev_barrier, threads);
-    dump->first = true;
     ovs_mutex_unlock(&dump->netdev_lock);
 }
 
@@ -1790,13 +1790,13 @@ dpif_netlink_flow_dump_next(struct dpif_flow_dump_thread *thread_,
         }
     }
 
-    if (thread->netdev_done && dump->first) {
-	if (n_flows)
-		return n_flows;
+    if (thread->netdev_done && dump->first_barrier) {
+        if (n_flows)
+            return n_flows;
 
-	ovs_barrier_block(&dump->netdev_barrier);
+        ovs_barrier_block(&dump->netdev_barrier);
 
-	dump->first = false;
+        dump->first_barrier = false;
     }
 
     if (!(dump->type & DUMP_OVS_FLOWS)) {
