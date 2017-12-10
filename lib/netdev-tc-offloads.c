@@ -917,7 +917,7 @@ netdev_tc_flow_put(struct netdev *netdev, struct match *match,
     memset(mask->vlans, 0, sizeof mask->vlans);
 
     flower.key.dst_mac = key->dl_dst;
-    flower.mask.dst_mac = mask->dl_dst;
+    memset(&flower.mask.dst_mac, 0xFF, sizeof flower.mask.dst_mac);
     flower.key.src_mac = key->dl_src;
     flower.mask.src_mac = mask->dl_src;
     memset(&mask->dl_dst, 0, sizeof mask->dl_dst);
