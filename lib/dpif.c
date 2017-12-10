@@ -581,21 +581,22 @@ dpif_port_add(struct dpif *dpif, struct netdev *netdev, odp_port_t *port_nop)
     if (!error) {
         VLOG_DBG_RL(&dpmsg_rl, "%s: added %s as port %"PRIu32,
                     dpif_name(dpif), netdev_name, port_no);
-
-        if (!dpif_is_internal_port(netdev_get_type(netdev))) {
-
-            struct dpif_port dpif_port;
-
-            dpif_port.type = CONST_CAST(char *, netdev_get_type(netdev));
-            dpif_port.name = CONST_CAST(char *, netdev_name);
-            dpif_port.port_no = port_no;
-            netdev_ports_insert(netdev, dpif->dpif_class, &dpif_port);
-        }
     } else {
         VLOG_WARN_RL(&error_rl, "%s: failed to add %s as port: %s",
                      dpif_name(dpif), netdev_name, ovs_strerror(error));
         port_no = ODPP_NONE;
     }
+
+    if ((!error || error == EEXIST) && !dpif_is_internal_port(netdev_get_type(netdev))) {
+
+        struct dpif_port dpif_port;
+
+        dpif_port.type = CONST_CAST(char *, netdev_get_type(netdev));
+        dpif_port.name = CONST_CAST(char *, netdev_name);
+        dpif_port.port_no = port_no;
+        netdev_ports_insert(netdev, dpif->dpif_class, &dpif_port);
+    }
+
     if (port_nop) {
         *port_nop = port_no;
     }
@@ -615,13 +616,13 @@ dpif_port_del(struct dpif *dpif, odp_port_t port_no)
     if (!error) {
         VLOG_DBG_RL(&dpmsg_rl, "%s: port_del(%"PRIu32")",
                     dpif_name(dpif), port_no);
-
-        netdev_ports_remove(port_no, dpif->dpif_class);
     } else {
         VLOG_INFO("%s: port_del(%"PRIu32")",
                     dpif_name(dpif), port_no);
         log_operation(dpif, "port_del", error);
     }
+
+    netdev_ports_remove(port_no, dpif->dpif_class);
     return error;
 }
 

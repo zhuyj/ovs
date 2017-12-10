@@ -1920,9 +1920,7 @@ port_destruct(struct ofport *port_, bool del)
          * happens when the ofproto is being destroyed, since the caller
          * assumes that removal of attached ports will happen as part of
          * destruction. */
-        if (!port->is_tunnel) {
             dpif_port_del(ofproto->backer->dpif, port->odp_port);
-        }
     }
 
     if (port->peer) {
