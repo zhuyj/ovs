@@ -2114,8 +2114,8 @@ parse_flow_put(struct dpif_netlink *dpif, struct dpif_flow_put *put)
             odp_port_t out_port;
 
             outputs++;
-            if (outputs > 1) {
-                VLOG_DBG_RL(&rl, "offloading multiple ports isn't supported");
+            if (outputs > 2) {
+                VLOG_DBG_RL(&rl, "offloading output action to more than two ports isn't supported");
                 err = EOPNOTSUPP;
                 goto out;
             }

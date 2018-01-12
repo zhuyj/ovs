@@ -393,15 +393,22 @@ parse_tc_flower_to_match(struct tc_flower *flower,
                          struct match *match,
                          struct nlattr **actions,
                          struct dpif_flow_stats *stats,
-                         struct ofpbuf *buf) {
+                         struct ofpbuf *buf)
+{
     size_t act_off;
     struct tc_flower_key *key = &flower->key;
     struct tc_flower_key *mask = &flower->mask;
-    odp_port_t outport = 0;
+    odp_port_t outport = 0, mirrorport = 0;
 
     if (flower->ifindex_out) {
         outport = netdev_ifindex_to_odp_port(flower->ifindex_out);
         if (!outport) {
+            return ENOENT;
+        }
+    }
+    if (flower->ifindex_mirror) {
+        mirrorport = netdev_ifindex_to_odp_port(flower->ifindex_mirror);
+        if (!mirrorport) {
             return ENOENT;
         }
     }
@@ -516,6 +523,9 @@ parse_tc_flower_to_match(struct tc_flower *flower,
             nl_msg_end_nested(buf, set_offset);
         }
 
+        if (flower->ifindex_mirror > 0) {
+            nl_msg_put_u32(buf, OVS_ACTION_ATTR_OUTPUT, odp_to_u32(mirrorport));
+        }
         if (flower->ifindex_out > 0) {
             nl_msg_put_u32(buf, OVS_ACTION_ATTR_OUTPUT, odp_to_u32(outport));
         }
@@ -850,10 +860,11 @@ netdev_tc_flow_put(struct netdev *netdev, struct match *match,
     struct flow *mask = &match->wc.masks;
     const struct flow_tnl *tnl = &match->flow.tunnel;
     struct nlattr *nla;
-    size_t left;
+    int ifindex, tmpif = 0;
+    int count = 0;
     int prio = 0;
+    size_t left;
     int handle;
-    int ifindex;
     int err;
 
     ifindex = netdev_get_ifindex(netdev);
@@ -987,10 +998,16 @@ netdev_tc_flow_put(struct netdev *netdev, struct match *match,
 
     NL_ATTR_FOR_EACH(nla, left, actions, actions_len) {
         if (nl_attr_type(nla) == OVS_ACTION_ATTR_OUTPUT) {
+            count++;
             odp_port_t port = nl_attr_get_odp_port(nla);
             struct netdev *outdev = netdev_ports_get(port, info->dpif_class);
 
-            flower.ifindex_out = netdev_get_ifindex(outdev);
+            if (count == 1)
+                tmpif = flower.ifindex_out = netdev_get_ifindex(outdev);
+            else if (count == 2) {
+                flower.ifindex_out = netdev_get_ifindex(outdev);
+                flower.ifindex_mirror = tmpif;
+            }
             flower.set.tp_dst = info->tp_dst_port;
             netdev_close(outdev);
         } else if (nl_attr_type(nla) == OVS_ACTION_ATTR_PUSH_VLAN) {

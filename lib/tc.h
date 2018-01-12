@@ -117,6 +117,7 @@ struct tc_flower {
     uint8_t vlan_push_prio;
 
     int ifindex_out;
+    int ifindex_mirror;
 
     struct ovs_flow_stats stats;
     uint64_t lastused;
