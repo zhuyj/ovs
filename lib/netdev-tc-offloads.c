@@ -444,6 +444,8 @@ parse_tc_flower_to_match(struct tc_flower *flower,
 
         match_set_nw_ttl_masked(match, key->ip_ttl, mask->ip_ttl);
 
+        match_set_nw_frag_masked(match, key->ip_frag, mask->ip_frag);
+
         match_set_nw_src_masked(match, key->ipv4.ipv4_src, mask->ipv4.ipv4_src);
         match_set_nw_dst_masked(match, key->ipv4.ipv4_dst, mask->ipv4.ipv4_dst);
 
@@ -931,6 +933,16 @@ netdev_tc_flow_put(struct netdev *netdev, struct match *match,
         flower.key.ip_ttl = key->nw_ttl;
         flower.mask.ip_ttl = mask->nw_ttl;
 
+        if (mask->nw_frag) {
+            if (key->nw_frag) {
+                return EOPNOTSUPP;
+            }
+
+            flower.key.ip_frag = key->nw_frag;
+            flower.mask.ip_frag = mask->nw_frag;
+            mask->nw_frag = 0;
+        }
+
         if (key->nw_proto == IPPROTO_TCP) {
             flower.key.tcp_dst = key->tp_dst;
             flower.mask.tcp_dst = mask->tp_dst;
@@ -957,7 +969,6 @@ netdev_tc_flow_put(struct netdev *netdev, struct match *match,
             mask->tp_dst = 0;
         }
 
-        mask->nw_frag = 0;
         mask->nw_tos = 0;
         mask->nw_proto = 0;
         mask->nw_ttl = 0;
