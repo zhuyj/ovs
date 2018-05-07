@@ -2255,13 +2255,12 @@ parse_flow_put(struct dpif_netlink *dpif, struct dpif_flow_put *put)
         VLOG_ERR("failed to offload flow: %s", ovs_strerror(err));
     } else {
         VLOG_DBG("already offloaded!");
-        err = 0;
     }
 
 out:
     netdev_close(dev);
 
-    if (info.ovs_sw) {
+    if (info.ovs_sw && !err) {
         err = SEND_TO_OVS_DP;
     }
 
