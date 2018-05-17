@@ -1448,13 +1448,13 @@ dpif_netlink_init_flow_del(struct dpif_netlink *dpif,
 }
 
 enum {
-    DUMP_OVS_FLOWS_BIT       = 0,
-    DUMP_OFFLOADED_FLOWS_BIT = 1,
+    DUMP_OVS_FLOWS_BIT    = 0,
+    DUMP_NETDEV_FLOWS_BIT = 1,
 };
 
 enum {
-    DUMP_OVS_FLOWS       = (1 << DUMP_OVS_FLOWS_BIT),
-    DUMP_OFFLOADED_FLOWS = (1 << DUMP_OFFLOADED_FLOWS_BIT),
+    DUMP_OVS_FLOWS    = (1 << DUMP_OVS_FLOWS_BIT),
+    DUMP_NETDEV_FLOWS = (1 << DUMP_NETDEV_FLOWS_BIT),
 };
 
 struct dpif_netlink_flow_dump {
@@ -1480,7 +1480,7 @@ start_netdev_dump(const struct dpif *dpif_,
 {
     ovs_mutex_init(&dump->netdev_lock);
 
-    if (!(dump->type & DUMP_OFFLOADED_FLOWS)) {
+    if (!(dump->type & DUMP_NETDEV_FLOWS)) {
         dump->netdev_dumps_num = 0;
         dump->netdev_dumps = NULL;
         return;
@@ -1503,7 +1503,7 @@ dpif_netlink_get_dump_type(char *str) {
     }
     if ((netdev_is_flow_api_enabled() && !str)
         || (str && (!strcmp(str, "offloaded") || !strcmp(str, "dpctl")))) {
-        type |= DUMP_OFFLOADED_FLOWS;
+        type |= DUMP_NETDEV_FLOWS;
     }
 
     return type;
@@ -1641,7 +1641,8 @@ dpif_netlink_flow_to_dpif_flow(struct dpif *dpif, struct dpif_flow *dpif_flow,
                        &dpif_flow->ufid);
     }
     dpif_netlink_flow_get_stats(datapath_flow, &dpif_flow->stats);
-    dpif_flow->offloaded = false;
+    dpif_flow->attrs.offloaded = false;
+    dpif_flow->attrs.dp_layer = "ovs";
 }
 
 /* The design is such that all threads are working together on the first dump
@@ -1683,6 +1684,7 @@ dpif_netlink_netdev_match_to_dpif_flow(struct match *match,
                                        struct ofpbuf *mask_buf,
                                        struct nlattr *actions,
                                        struct dpif_flow_stats *stats,
+                                       struct dpif_flow_attrs *attrs,
                                        ovs_u128 *ufid,
                                        struct dpif_flow *flow,
                                        bool terse OVS_UNUSED)
@@ -1725,7 +1727,7 @@ dpif_netlink_netdev_match_to_dpif_flow(struct match *match,
 
     flow->pmd_id = PMD_ID_NULL;
 
-    flow->offloaded = true;
+    memcpy(&flow->attrs, attrs, sizeof *attrs);
 
     return 0;
 }
@@ -1757,6 +1759,7 @@ dpif_netlink_flow_dump_next(struct dpif_flow_dump_thread *thread_,
         struct match match;
         struct nlattr *actions;
         struct dpif_flow_stats stats;
+        struct dpif_flow_attrs attrs;
         ovs_u128 ufid;
         bool has_next;
 
@@ -1764,7 +1767,7 @@ dpif_netlink_flow_dump_next(struct dpif_flow_dump_thread *thread_,
         ofpbuf_use_stack(&act, actbuf, sizeof *actbuf);
         ofpbuf_use_stack(&mask, maskbuf, sizeof *maskbuf);
         has_next = netdev_flow_dump_next(netdev_dump, &match,
-                                        &actions, &stats,
+                                        &actions, &stats, &attrs,
                                         &ufid,
                                         &thread->nl_flows,
                                         &act);
@@ -1773,6 +1776,7 @@ dpif_netlink_flow_dump_next(struct dpif_flow_dump_thread *thread_,
                                                    &key, &mask,
                                                    actions,
                                                    &stats,
+                                                   &attrs,
                                                    &ufid,
                                                    f,
                                                    dump->up.terse);
@@ -2040,6 +2044,7 @@ parse_flow_get(struct dpif_netlink *dpif, struct dpif_flow_get *get)
     struct match match;
     struct nlattr *actions;
     struct dpif_flow_stats stats;
+    struct dpif_flow_attrs attrs;
     struct ofpbuf buf;
     uint64_t act_buf[1024 / 8];
     struct odputil_keybuf maskbuf;
@@ -2050,7 +2055,7 @@ parse_flow_get(struct dpif_netlink *dpif, struct dpif_flow_get *get)
 
     ofpbuf_use_stack(&buf, &act_buf, sizeof act_buf);
     err = netdev_ports_flow_get(dpif->dpif.dpif_class, &match,
-                                &actions, get->ufid, &stats, &buf);
+                                &actions, get->ufid, &stats, &attrs, &buf);
     if (err) {
         return err;
     }
@@ -2061,7 +2066,7 @@ parse_flow_get(struct dpif_netlink *dpif, struct dpif_flow_get *get)
     ofpbuf_use_stack(&act, &actbuf, sizeof actbuf);
     ofpbuf_use_stack(&mask, &maskbuf, sizeof maskbuf);
     dpif_netlink_netdev_match_to_dpif_flow(&match, &key, &mask, actions,
-                                           &stats,
+                                           &stats, &attrs,
                                            (ovs_u128 *) get->ufid,
                                            dpif_flow,
                                            false);
