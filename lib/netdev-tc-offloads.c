@@ -1210,6 +1210,11 @@ probe_multi_mask_per_prio(int ifindex)
     struct tc_flower flower;
     int error;
 
+    error = tc_add_del_ingress_qdisc(ifindex, true);
+    if (error) {
+        return;
+    }
+
     memset(&flower, 0, sizeof flower);
 
     flower.key.eth_type = htons(ETH_P_IP);
@@ -1219,7 +1224,7 @@ probe_multi_mask_per_prio(int ifindex)
 
     error = tc_replace_flower(ifindex, 1, 1, &flower);
     if (error) {
-        return;
+        goto out;
     }
 
     memset(&flower.key.src_mac, 0x11, sizeof flower.key.src_mac);
@@ -1229,13 +1234,16 @@ probe_multi_mask_per_prio(int ifindex)
     tc_del_filter(ifindex, 1, 1);
 
     if (error) {
-        return;
+        goto out;
     }
 
     tc_del_filter(ifindex, 1, 2);
 
     multi_mask_per_prio = true;
     VLOG_INFO("probe tc: multiple masks on single tc prio is supported.");
+
+out:
+    tc_add_del_ingress_qdisc(ifindex, false);
 }
 
 int
@@ -1252,6 +1260,11 @@ netdev_tc_init_flow_api(struct netdev *netdev)
         return -ifindex;
     }
 
+    if (ovsthread_once_start(&once)) {
+        probe_multi_mask_per_prio(ifindex);
+        ovsthread_once_done(&once);
+    }
+
     error = tc_add_del_ingress_qdisc(ifindex, true);
 
     if (error && error != EEXIST) {
@@ -1261,11 +1274,6 @@ netdev_tc_init_flow_api(struct netdev *netdev)
     }
 
     VLOG_INFO("added ingress qdisc to %s", netdev_get_name(netdev));
-
-    if (ovsthread_once_start(&once)) {
-        probe_multi_mask_per_prio(ifindex);
-        ovsthread_once_done(&once);
-    }
 
     return 0;
 }
