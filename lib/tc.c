@@ -1581,12 +1581,6 @@ nl_msg_put_flower_acts(struct ofpbuf *request, struct tc_flower *flower)
     {
         int error;
 
-        if (flower->tunnel.tunnel) {
-            act_offset = nl_msg_start_nested(request, act_index++);
-            nl_msg_put_act_tunnel_key_release(request);
-            nl_msg_end_nested(request, act_offset);
-        }
-
         action = flower->actions;
         for (i = 0; i < flower->action_count; i++, action++) {
             switch (action->type) {
