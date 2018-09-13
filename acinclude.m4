@@ -202,7 +202,14 @@ AC_DEFUN([OVS_CHECK_LINUX_TC], [
         int x = TCA_PEDIT_KEY_EX_HDR_TYPE_UDP;
     ])],
     [AC_DEFINE([HAVE_TCA_PEDIT_KEY_EX_HDR_TYPE_UDP], [1],
-               [Define to 1 if TCA_PEDIT_KEY_EX_HDR_TYPE_UDP is avaiable.])])
+               [Define to 1 if TCA_PEDIT_KEY_EX_HDR_TYPE_UDP is available.])])
+
+  AC_COMPILE_IFELSE([
+    AC_LANG_PROGRAM([#include <linux/pkt_cls.h>], [
+        int x = TCA_FLOWER_KEY_CT_LABELS;
+    ])],
+    [AC_DEFINE([HAVE_TCA_FLOWER_KEY_CT_LABELS], [1],
+               [Define to 1 if TCA_FLOWER_KEY_CT_LABELS is avaiable.])])
 ])
 
 dnl OVS_CHECK_DPDK
