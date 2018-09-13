@@ -1573,6 +1573,7 @@ dpif_netlink_netdev_match_to_dpif_flow(struct match *match,
         .mask = &match->wc.masks,
         .support = {
             .max_vlan_headers = 1,
+            .recirc = true,
         },
     };
     size_t offset;

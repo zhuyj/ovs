@@ -49,7 +49,9 @@
 
 #if TCA_MAX < 14
 #define TCA_INGRESS_BLOCK 13
+#define TCA_CHAIN 11
 #endif
+
 
 VLOG_DEFINE_THIS_MODULE(tc);
 
@@ -221,6 +223,7 @@ tc_add_del_ingress_qdisc(int ifindex, bool add, uint32_t block_id)
 static const struct nl_policy tca_policy[] = {
     [TCA_KIND] = { .type = NL_A_STRING, .optional = false, },
     [TCA_OPTIONS] = { .type = NL_A_NESTED, .optional = false, },
+    [TCA_CHAIN] = { .type = NL_A_U32, .optional = true, },
     [TCA_STATS] = { .type = NL_A_UNSPEC,
                     .min_len = sizeof(struct tc_stats), .optional = true, },
     [TCA_STATS2] = { .type = NL_A_NESTED, .optional = true, },
@@ -1023,6 +1026,10 @@ parse_netlink_to_tc_flower(struct ofpbuf *reply, struct tc_flower *flower)
         return EPROTO;
     }
 
+    if (ta[TCA_CHAIN]) {
+        flower->chain = nl_attr_get_u32(ta[TCA_CHAIN]);
+    }
+
     kind = nl_attr_get_string(ta[TCA_KIND]);
     if (strcmp(kind, "flower")) {
         VLOG_DBG_ONCE("Unsupported filter: %s", kind);
@@ -1067,7 +1074,8 @@ tc_flush(int ifindex, uint32_t block_id)
 }
 
 int
-tc_del_filter(int ifindex, int prio, int handle, uint32_t block_id)
+tc_del_filter(int ifindex, uint32_t chain, int prio, int handle,
+              uint32_t block_id)
 {
     struct ofpbuf request;
     struct tcmsg *tcmsg;
@@ -1081,6 +1089,10 @@ tc_del_filter(int ifindex, int prio, int handle, uint32_t block_id)
     tcmsg->tcm_info = tc_make_handle(prio, 0);
     tcmsg->tcm_handle = handle;
 
+    if (chain) {
+        nl_msg_put_u32(&request, TCA_CHAIN, chain);
+    }
+
     error = tc_transact(&request, &reply);
     if (!error) {
         ofpbuf_delete(reply);
@@ -1089,8 +1101,8 @@ tc_del_filter(int ifindex, int prio, int handle, uint32_t block_id)
 }
 
 int
-tc_get_flower(int ifindex, int prio, int handle, struct tc_flower *flower,
-              uint32_t block_id)
+tc_get_flower(int ifindex, uint32_t chain, int prio, int handle,
+              struct tc_flower *flower, uint32_t block_id)
 {
     struct ofpbuf request;
     struct tcmsg *tcmsg;
@@ -1103,6 +1115,10 @@ tc_get_flower(int ifindex, int prio, int handle, struct tc_flower *flower,
     tcmsg->tcm_parent = block_id ? : TC_INGRESS_PARENT;
     tcmsg->tcm_info = tc_make_handle(prio, 0);
     tcmsg->tcm_handle = handle;
+
+    if (chain) {
+        nl_msg_put_u32(&request, TCA_CHAIN, chain);
+    }
 
     error = tc_transact(&request, &reply);
     if (error) {
@@ -1663,7 +1679,7 @@ nl_msg_put_flower_options(struct ofpbuf *request, struct tc_flower *flower)
 }
 
 int
-tc_replace_flower(int ifindex, uint16_t prio, uint32_t handle,
+tc_replace_flower(int ifindex, uint32_t chain, uint16_t prio, uint32_t handle,
                   struct tc_flower *flower, uint32_t block_id)
 {
     struct ofpbuf request;
@@ -1682,6 +1698,11 @@ tc_replace_flower(int ifindex, uint16_t prio, uint32_t handle,
     tcmsg->tcm_handle = handle;
 
     nl_msg_put_string(&request, TCA_KIND, "flower");
+    if (chain) {
+        nl_msg_put_u32(&request, TCA_CHAIN, chain);
+        flower->chain = chain;
+    }
+
     basic_offset = nl_msg_start_nested(&request, TCA_OPTIONS);
     {
         error = nl_msg_put_flower_options(&request, flower);
