@@ -27,6 +27,7 @@
 #include <linux/tc_act/tc_pedit.h>
 #include <linux/tc_act/tc_tunnel_key.h>
 #include <linux/tc_act/tc_vlan.h>
+#include <linux/tc_act/tc_ct.h>
 #include <linux/gen_stats.h>
 #include <net/if.h>
 #include <unistd.h>
@@ -813,6 +814,31 @@ nl_parse_act_mirred(struct nlattr *options, struct tc_flower *flower)
     return 0;
 }
 
+static const struct nl_policy conntrack_policy[] = {
+    [TCA_CONNTRACK_PARMS] = { .type = NL_A_UNSPEC,
+                              .min_len = sizeof(struct tc_conntrack),
+                              .optional = false, },
+};
+
+static int
+nl_parse_act_conntrack(struct nlattr *options, struct tc_flower *flower)
+{
+    struct nlattr *conntrack_attrs[ARRAY_SIZE(conntrack_policy)];
+    struct tc_action *action;
+
+    if (!nl_parse_nested(options, conntrack_policy, conntrack_attrs,
+                         ARRAY_SIZE(conntrack_policy))) {
+        VLOG_ERR_RL(&error_rl, "failed to parse conntrack action options");
+        return EPROTO;
+    }
+
+    action = &flower->actions[flower->action_count++];
+    action->type = TC_ACT_CT;
+
+    return 0;
+}
+
+
 static const struct nl_policy vlan_policy[] = {
     [TCA_VLAN_PARMS] = { .type = NL_A_UNSPEC,
                          .min_len = sizeof(struct tc_vlan),
@@ -944,6 +970,8 @@ nl_parse_single_action(struct nlattr *action, struct tc_flower *flower)
         err = nl_parse_act_pedit(act_options, flower);
     } else if (!strcmp(act_kind, "csum")) {
         nl_parse_act_csum(act_options, flower);
+    } else if (!strcmp(act_kind, "ct")) {
+        nl_parse_act_conntrack(act_options, flower);
     } else {
         VLOG_ERR_RL(&error_rl, "unknown tc action kind: %s", act_kind);
         err = EINVAL;
@@ -1310,6 +1338,23 @@ nl_msg_put_act_tunnel_key_set(struct ofpbuf *request, ovs_be64 id,
 }
 
 static void
+nl_msg_put_act_conntrack(struct ofpbuf *request, struct tc_action *action)
+{
+    size_t offset;
+
+    nl_msg_put_string(request, TCA_ACT_KIND, "ct");
+    offset = nl_msg_start_nested(request, TCA_ACT_OPTIONS);
+    {
+        struct tc_conntrack ct = {
+                .action = TC_ACT_PIPE,
+        };
+
+        nl_msg_put_unspec(request, TCA_CONNTRACK_PARMS, &ct, sizeof ct);
+    }
+    nl_msg_end_nested(request, offset);
+}
+
+static void
 nl_msg_put_act_gact(struct ofpbuf *request, uint32_t chain)
 {
     size_t offset;
@@ -1593,6 +1638,13 @@ nl_msg_put_flower_acts(struct ofpbuf *request, struct tc_flower *flower)
                 act_offset = nl_msg_start_nested(request, act_index++);
                 nl_msg_put_act_gact(request, action->chain);
                 nl_msg_put_act_cookie(request, &flower->act_cookie);
+                nl_msg_end_nested(request, act_offset);
+            }
+            break;
+            case TC_ACT_CT: {
+                drop_rule = false;
+                act_offset = nl_msg_start_nested(request, act_index++);
+                nl_msg_put_act_conntrack(request, action);
                 nl_msg_end_nested(request, act_offset);
             }
             break;
