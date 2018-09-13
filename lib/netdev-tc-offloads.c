@@ -1396,7 +1396,7 @@ probe_tc_block_support(int ifindex)
     int error;
 
     error = tc_add_del_ingress_qdisc(ifindex, true, block_id);
-    if (error) {
+    if (error && error != EEXIST) {
         return;
     }
 
@@ -1433,6 +1433,7 @@ netdev_tc_init_flow_api(struct netdev *netdev)
     }
 
     block_id = get_block_id_from_netdev(netdev);
+    error = tc_add_del_ingress_qdisc(ifindex, false, block_id);
     error = tc_add_del_ingress_qdisc(ifindex, true, block_id);
 
     if (error && error != EEXIST) {
