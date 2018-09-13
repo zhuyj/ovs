@@ -5659,6 +5659,17 @@ odp_flow_key_from_flow__(const struct odp_flow_key_parms *parms,
 
     nl_msg_put_u32(buf, OVS_KEY_ATTR_SKB_MARK, data->pkt_mark);
 
+    if (parms->support.recirc) {
+        nl_msg_put_u32(buf, OVS_KEY_ATTR_RECIRC_ID, data->recirc_id);
+        nl_msg_put_u32(buf, OVS_KEY_ATTR_DP_HASH, data->dp_hash);
+    }
+
+    /* Add an ingress port attribute if this is a mask or 'in_port.odp_port'
+     * is not the magical value "ODPP_NONE". */
+    if (export_mask || flow->in_port.odp_port != ODPP_NONE) {
+        nl_msg_put_odp_port(buf, OVS_KEY_ATTR_IN_PORT, data->in_port.odp_port);
+    }
+
     if (parms->support.ct_state) {
         nl_msg_put_u32(buf, OVS_KEY_ATTR_CT_STATE,
                        ovs_to_odp_ct_state(data->ct_state));
@@ -5697,16 +5708,6 @@ odp_flow_key_from_flow__(const struct odp_flow_key_parms *parms,
             nl_msg_put_unspec(buf, OVS_KEY_ATTR_CT_ORIG_TUPLE_IPV6, &ct,
                               sizeof ct);
         }
-    }
-    if (parms->support.recirc) {
-        nl_msg_put_u32(buf, OVS_KEY_ATTR_RECIRC_ID, data->recirc_id);
-        nl_msg_put_u32(buf, OVS_KEY_ATTR_DP_HASH, data->dp_hash);
-    }
-
-    /* Add an ingress port attribute if this is a mask or 'in_port.odp_port'
-     * is not the magical value "ODPP_NONE". */
-    if (export_mask || flow->in_port.odp_port != ODPP_NONE) {
-        nl_msg_put_odp_port(buf, OVS_KEY_ATTR_IN_PORT, data->in_port.odp_port);
     }
 
     nl_msg_put_be32(buf, OVS_KEY_ATTR_PACKET_TYPE, data->packet_type);
