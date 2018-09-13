@@ -92,6 +92,7 @@ struct tc_flower_key {
 
     ovs_be16 encap_eth_type;
 
+    uint8_t ct_state;
     uint8_t flags;
     uint8_t ip_ttl;
     uint8_t ip_tos;

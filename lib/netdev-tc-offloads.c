@@ -502,6 +502,8 @@ parse_tc_flower_to_match(struct tc_flower *flower,
             match_set_tp_dst_masked(match, key->sctp_dst, mask->sctp_dst);
             match_set_tp_src_masked(match, key->sctp_src, mask->sctp_src);
         }
+
+        match_set_ct_state_masked(match, key->ct_state, mask->ct_state);
     }
 
     if (flower->tunnel.tunnel) {
@@ -811,11 +813,6 @@ test_key_and_mask(struct match *match)
         return EOPNOTSUPP;
     }
 
-    if (mask->ct_state) {
-        VLOG_DBG_RL(&rl, "offloading attribute ct_state isn't supported");
-        return EOPNOTSUPP;
-    }
-
     if (mask->ct_zone) {
         VLOG_DBG_RL(&rl, "offloading attribute ct_zone isn't supported");
         return EOPNOTSUPP;
@@ -1078,6 +1075,12 @@ netdev_tc_flow_put(struct netdev *netdev, struct match *match,
             memset(&mask->ipv6_src, 0, sizeof mask->ipv6_src);
             memset(&mask->ipv6_dst, 0, sizeof mask->ipv6_dst);
         }
+    }
+
+    if (mask->ct_state) {
+        flower.key.ct_state = key->ct_state;
+        flower.mask.ct_state = mask->ct_state;
+        mask->ct_state = 0;
     }
 
     err = test_key_and_mask(match);
