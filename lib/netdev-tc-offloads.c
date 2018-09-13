@@ -504,6 +504,9 @@ parse_tc_flower_to_match(struct tc_flower *flower,
         }
 
         match_set_ct_state_masked(match, key->ct_state, mask->ct_state);
+        match_set_ct_zone_masked(match, key->ct_zone, mask->ct_zone);
+        match_set_ct_mark_masked(match, key->ct_mark, mask->ct_mark);
+        match_set_ct_label_masked(match, key->ct_label, mask->ct_label);
     }
 
     if (flower->tunnel.tunnel) {
@@ -813,26 +816,11 @@ test_key_and_mask(struct match *match)
         return EOPNOTSUPP;
     }
 
-    if (mask->ct_zone) {
-        VLOG_DBG_RL(&rl, "offloading attribute ct_zone isn't supported");
-        return EOPNOTSUPP;
-    }
-
-    if (mask->ct_mark) {
-        VLOG_DBG_RL(&rl, "offloading attribute ct_mark isn't supported");
-        return EOPNOTSUPP;
-    }
-
     if (mask->packet_type && key->packet_type) {
         VLOG_DBG_RL(&rl, "offloading attribute packet_type isn't supported");
         return EOPNOTSUPP;
     }
     mask->packet_type = 0;
-
-    if (!ovs_u128_is_zero(mask->ct_label)) {
-        VLOG_DBG_RL(&rl, "offloading attribute ct_label isn't supported");
-        return EOPNOTSUPP;
-    }
 
     for (int i = 0; i < FLOW_N_REGS; i++) {
         if (mask->regs[i]) {
@@ -1081,6 +1069,21 @@ netdev_tc_flow_put(struct netdev *netdev, struct match *match,
         flower.key.ct_state = key->ct_state;
         flower.mask.ct_state = mask->ct_state;
         mask->ct_state = 0;
+    }
+    if (mask->ct_mark) {
+        flower.key.ct_mark = key->ct_mark;
+        flower.mask.ct_mark = mask->ct_mark;
+        mask->ct_mark = 0;
+    }
+    if (!ovs_u128_is_zero(mask->ct_label)) {
+        flower.key.ct_label = key->ct_label;
+        flower.mask.ct_label = mask->ct_label;
+        mask->ct_label = OVS_U128_ZERO;
+    }
+    if (mask->ct_zone) {
+        flower.key.ct_zone = key->ct_zone;
+        flower.mask.ct_zone = mask->ct_zone;
+        mask->ct_zone = 0;
     }
 
     err = test_key_and_mask(match);

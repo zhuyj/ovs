@@ -1,7 +1,7 @@
 #ifndef __LINUX_PKT_CLS_WRAPPER_H
 #define __LINUX_PKT_CLS_WRAPPER_H 1
 
-#if defined(__KERNEL__) || defined(HAVE_TCA_FLOWER_KEY_FLAGS_FRAG_IS_FIRST)
+#if defined(__KERNEL__) || defined(HAVE_TCA_FLOWER_KEY_CT_LABELS)
 #include_next <linux/pkt_cls.h>
 #else
 
@@ -213,6 +213,15 @@ enum {
 	TCA_FLOWER_KEY_CT_STATE,	/* u8 */
 	TCA_FLOWER_KEY_CT_STATE_MASK,	/* u8 */
 
+	TCA_FLOWER_KEY_CT_ZONE,		/* u16 */
+	TCA_FLOWER_KEY_CT_ZONE_MASK,	/* u16 */
+
+	TCA_FLOWER_KEY_CT_MARK,		/* u32 */
+	TCA_FLOWER_KEY_CT_MARK_MASK,	/* u32 */
+
+	TCA_FLOWER_KEY_CT_LABELS,	/* u32*4 */
+	TCA_FLOWER_KEY_CT_LABELS_MASK,	/* u32*4 */
+
 	__TCA_FLOWER_MAX,
 };
 
@@ -228,6 +237,6 @@ enum {
 	TCA_FLOWER_KEY_FLAGS_FRAG_IS_FIRST = (1 << 1),
 };
 
-#endif /* __KERNEL__ || !HAVE_TCA_FLOWER_KEY_FLAGS_FRAG_IS_FIRST */
+#endif /* __KERNEL__ || !HAVE_TCA_FLOWER_KEY_CT_LABELS */
 
 #endif /* __LINUX_PKT_CLS_WRAPPER_H */

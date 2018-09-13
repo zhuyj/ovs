@@ -1575,6 +1575,9 @@ dpif_netlink_netdev_match_to_dpif_flow(struct match *match,
             .max_vlan_headers = 1,
             .recirc = true,
             .ct_state = true,
+            .ct_zone = true,
+            .ct_mark = true,
+            .ct_label = true,
         },
     };
     size_t offset;

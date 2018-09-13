@@ -317,6 +317,18 @@ static const struct nl_policy tca_flower_policy[] = {
                                 .optional = true, },
     [TCA_FLOWER_KEY_CT_STATE_MASK] = { .type = NL_A_U8,
                                 .optional = true, },
+    [TCA_FLOWER_KEY_CT_ZONE] = { .type = NL_A_U16,
+                                .optional = true, },
+    [TCA_FLOWER_KEY_CT_ZONE_MASK] = { .type = NL_A_U16,
+                                .optional = true, },
+    [TCA_FLOWER_KEY_CT_MARK] = { .type = NL_A_U32,
+                                .optional = true, },
+    [TCA_FLOWER_KEY_CT_MARK_MASK] = { .type = NL_A_U32,
+                                .optional = true, },
+    [TCA_FLOWER_KEY_CT_LABELS] = { .type = NL_A_U128,
+                                  .optional = true, },
+    [TCA_FLOWER_KEY_CT_LABELS_MASK] = { .type = NL_A_U128,
+                                       .optional = true, },
 };
 
 static void
@@ -493,6 +505,21 @@ nl_parse_flower_ip(struct nlattr **attrs, struct tc_flower *flower) {
     if (attrs[TCA_FLOWER_KEY_CT_STATE_MASK]) {
         key->ct_state = nl_attr_get_u8(attrs[TCA_FLOWER_KEY_CT_STATE]);
         mask->ct_state = nl_attr_get_u8(attrs[TCA_FLOWER_KEY_CT_STATE_MASK]);
+    }
+
+    if (attrs[TCA_FLOWER_KEY_CT_ZONE_MASK]) {
+        key->ct_zone = nl_attr_get_u16(attrs[TCA_FLOWER_KEY_CT_ZONE]);
+        mask->ct_zone = nl_attr_get_u16(attrs[TCA_FLOWER_KEY_CT_ZONE_MASK]);
+    }
+
+    if (attrs[TCA_FLOWER_KEY_CT_MARK_MASK]) {
+        key->ct_mark = nl_attr_get_u32(attrs[TCA_FLOWER_KEY_CT_MARK]);
+        mask->ct_mark = nl_attr_get_u32(attrs[TCA_FLOWER_KEY_CT_MARK_MASK]);
+    }
+
+    if (attrs[TCA_FLOWER_KEY_CT_LABELS_MASK]) {
+        key->ct_label = nl_attr_get_u128(attrs[TCA_FLOWER_KEY_CT_LABELS]);
+        mask->ct_label = nl_attr_get_u128(attrs[TCA_FLOWER_KEY_CT_LABELS_MASK]);
     }
 }
 
@@ -1673,6 +1700,9 @@ nl_msg_put_flower_options(struct ofpbuf *request, struct tc_flower *flower)
         }
 
         FLOWER_PUT_MASKED_VALUE(ct_state, TCA_FLOWER_KEY_CT_STATE);
+        FLOWER_PUT_MASKED_VALUE(ct_mark, TCA_FLOWER_KEY_CT_MARK);
+        FLOWER_PUT_MASKED_VALUE(ct_zone, TCA_FLOWER_KEY_CT_ZONE);
+        FLOWER_PUT_MASKED_VALUE(ct_label, TCA_FLOWER_KEY_CT_LABELS);
     }
 
     if (host_eth_type == ETH_P_IP) {
