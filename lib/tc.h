@@ -146,6 +146,15 @@ struct tc_action {
                 struct in6_addr ipv6_dst;
             } ipv6;
         } encap;
+
+        struct {
+            uint16_t zone;
+            uint32_t mark;
+            uint32_t mark_mask;
+            ovs_u128 label;
+            ovs_u128 label_mask;
+            bool commit;
+        } ct;
      };
 
      enum tc_action_type type;

@@ -595,6 +595,30 @@ parse_tc_flower_to_match(struct tc_flower *flower,
             break;
             case TC_ACT_CT: {
                 size_t ct_offset = nl_msg_start_nested(buf, OVS_ACTION_ATTR_CT);
+
+                if (action->ct.commit)
+                    nl_msg_put_flag(buf, OVS_CT_ATTR_COMMIT);
+
+                if (action->ct.zone)
+                    nl_msg_put_u16(buf, OVS_CT_ATTR_ZONE, action->ct.zone);
+
+                if (action->ct.mark_mask) {
+                    uint32_t mark_and_mask[2] = { action->ct.mark, action->ct.mark_mask };
+                    nl_msg_put_unspec(buf, OVS_CT_ATTR_MARK, &mark_and_mask, sizeof mark_and_mask);
+                }
+
+                if (!ovs_u128_is_zero(action->ct.label_mask)) {
+                    struct {
+                        ovs_u128 key;
+                        ovs_u128 mask;
+                    } *ct_label;
+
+                    ct_label = nl_msg_put_unspec_uninit(buf, OVS_CT_ATTR_LABELS,
+                                                        sizeof *ct_label);
+                    ct_label->key = action->ct.label;
+                    ct_label->mask = action->ct.label_mask;
+                }
+
                 nl_msg_end_nested(buf, ct_offset);
             }
             break;
@@ -1147,6 +1171,45 @@ netdev_tc_flow_put(struct netdev *netdev, struct match *match,
             action->type = TC_ACT_GOTO;
             flower.action_count++;
         } else if (nl_attr_type(nla) == OVS_ACTION_ATTR_CT) {
+            const struct nlattr *ct = nl_attr_get(nla);
+            const size_t ct_len = nl_attr_get_size(nla);
+            const struct nlattr *ct_attr;
+            size_t ct_left;
+
+            NL_ATTR_FOR_EACH_UNSAFE(ct_attr, ct_left, ct, ct_len) {
+                switch (nl_attr_type(ct_attr)) {
+                    case OVS_CT_ATTR_COMMIT: {
+                            action->ct.commit = true;
+                    }
+                    break;
+                    case OVS_CT_ATTR_ZONE: {
+                        action->ct.zone = nl_attr_get_u16(ct_attr);
+                    }
+                    break;
+                    case OVS_CT_ATTR_MARK: {
+                        const struct {
+                            uint32_t key;
+                            uint32_t mask;
+                        } *ct_mark;
+
+                        ct_mark = nl_attr_get_unspec(ct_attr, sizeof *ct_mark);
+                        action->ct.mark = ct_mark->key;
+                        action->ct.mark_mask = ct_mark->mask;
+                    }
+                    break;
+                    case OVS_CT_ATTR_LABELS: {
+                        const struct {
+                            ovs_u128 key;
+                            ovs_u128 mask;
+                        } *ct_label;
+
+                        ct_label = nl_attr_get_unspec(ct_attr, sizeof *ct_label);
+                        action->ct.label = ct_label->key;
+                        action->ct.label_mask = ct_label->mask;
+                    }
+                    break;
+                }
+            }
             action->type = TC_ACT_CT;
             flower.action_count++;
         } else {

@@ -824,6 +824,8 @@ static int
 nl_parse_act_conntrack(struct nlattr *options, struct tc_flower *flower)
 {
     struct nlattr *conntrack_attrs[ARRAY_SIZE(conntrack_policy)];
+    const struct tc_conntrack *ct;
+    const struct nlattr *conntrack_parms;
     struct tc_action *action;
 
     if (!nl_parse_nested(options, conntrack_policy, conntrack_attrs,
@@ -832,7 +834,16 @@ nl_parse_act_conntrack(struct nlattr *options, struct tc_flower *flower)
         return EPROTO;
     }
 
+    conntrack_parms = conntrack_attrs[TCA_CONNTRACK_PARMS];
+    ct = nl_attr_get_unspec(conntrack_parms, sizeof *ct);
+
     action = &flower->actions[flower->action_count++];
+    action->ct.commit = ct->commit;
+    action->ct.zone = ct->zone;
+    action->ct.mark = ct->mark;
+    action->ct.mark_mask = ct->mark_mask;
+    memcpy(&action->ct.label, ct->labels, sizeof action->ct.label);
+    memcpy(&action->ct.label_mask, ct->labels_mask, sizeof action->ct.label_mask);
     action->type = TC_ACT_CT;
 
     return 0;
@@ -1347,7 +1358,13 @@ nl_msg_put_act_conntrack(struct ofpbuf *request, struct tc_action *action)
     {
         struct tc_conntrack ct = {
                 .action = TC_ACT_PIPE,
+                .commit = action->ct.commit,
+                .zone = action->ct.zone,
+                .mark = action->ct.mark,
+                .mark_mask = action->ct.mark_mask,
         };
+        memcpy(ct.labels, &action->ct.label, sizeof ct.labels);
+        memcpy(ct.labels_mask, &action->ct.label_mask, sizeof ct.labels_mask);
 
         nl_msg_put_unspec(request, TCA_CONNTRACK_PARMS, &ct, sizeof ct);
     }
