@@ -584,6 +584,10 @@ parse_tc_flower_to_match(struct tc_flower *flower,
                 nl_msg_put_u32(buf, OVS_ACTION_ATTR_OUTPUT, odp_to_u32(outport));
             }
             break;
+            case TC_ACT_GOTO: {
+                nl_msg_put_u32(buf, OVS_ACTION_ATTR_RECIRC, action->chain);
+            }
+            break;
             }
         }
     }
@@ -1125,6 +1129,12 @@ netdev_tc_flow_put(struct netdev *netdev, struct match *match,
             if (err) {
                 return err;
             }
+        } else if (nl_attr_type(nla) == OVS_ACTION_ATTR_RECIRC) {
+            const uint32_t recirc_id = nl_attr_get_u32(nla);
+
+            action->chain = recirc_id;
+            action->type = TC_ACT_GOTO;
+            flower.action_count++;
         } else {
             VLOG_DBG_RL(&rl, "unsupported put action type: %d",
                         nl_attr_type(nla));

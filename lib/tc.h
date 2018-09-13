@@ -113,10 +113,13 @@ enum tc_action_type {
     TC_ACT_PEDIT,
     TC_ACT_VLAN_POP,
     TC_ACT_VLAN_PUSH,
+    TC_ACT_GOTO,
 };
 
 struct tc_action {
     union {
+        int chain;
+
         int ifindex_out;
 
         struct {

@@ -698,12 +698,13 @@ nl_parse_tcf(const struct tcf_t *tm, struct tc_flower *flower)
 }
 
 static int
-nl_parse_act_drop(struct nlattr *options, struct tc_flower *flower)
+nl_parse_act_gact(struct nlattr *options, struct tc_flower *flower)
 {
     struct nlattr *gact_attrs[ARRAY_SIZE(gact_policy)];
     const struct tc_gact *p;
     struct nlattr *gact_parms;
     const struct tcf_t *tm;
+    struct tc_action *action;
 
     if (!nl_parse_nested(options, gact_policy, gact_attrs,
                          ARRAY_SIZE(gact_policy))) {
@@ -714,7 +715,12 @@ nl_parse_act_drop(struct nlattr *options, struct tc_flower *flower)
     gact_parms = gact_attrs[TCA_GACT_PARMS];
     p = nl_attr_get_unspec(gact_parms, sizeof *p);
 
-    if (p->action != TC_ACT_SHOT) {
+    if (TC_ACT_EXT_CMP(p->action, TC_ACT_GOTO_CHAIN)) {
+        action = &flower->actions[flower->action_count++];
+        action->chain = p->action & TC_ACT_EXT_VAL_MASK;
+        action->type = TC_ACT_GOTO;
+    }
+    else if (p->action != TC_ACT_SHOT) {
         VLOG_ERR_RL(&error_rl, "unknown gact action: %d", p->action);
         return EINVAL;
     }
@@ -891,7 +897,7 @@ nl_parse_single_action(struct nlattr *action, struct tc_flower *flower)
     act_cookie = action_attrs[TCA_ACT_COOKIE];
 
     if (!strcmp(act_kind, "gact")) {
-        err = nl_parse_act_drop(act_options, flower);
+        err = nl_parse_act_gact(act_options, flower);
     } else if (!strcmp(act_kind, "mirred")) {
         err = nl_parse_act_mirred(act_options, flower);
     } else if (!strcmp(act_kind, "vlan")) {
@@ -1268,7 +1274,7 @@ nl_msg_put_act_tunnel_key_set(struct ofpbuf *request, ovs_be64 id,
 }
 
 static void
-nl_msg_put_act_drop(struct ofpbuf *request)
+nl_msg_put_act_gact(struct ofpbuf *request, uint32_t chain)
 {
     size_t offset;
 
@@ -1276,6 +1282,10 @@ nl_msg_put_act_drop(struct ofpbuf *request)
     offset = nl_msg_start_nested(request, TCA_ACT_OPTIONS);
     {
         struct tc_gact p = { .action = TC_ACT_SHOT };
+
+        if (chain) {
+            p.action = TC_ACT_GOTO_CHAIN | chain;
+        }
 
         nl_msg_put_unspec(request, TCA_GACT_PARMS, &p, sizeof p);
     }
@@ -1467,6 +1477,7 @@ nl_msg_put_flower_acts(struct ofpbuf *request, struct tc_flower *flower)
     uint16_t act_index = 1;
     struct tc_action *action;
     int i, ifindex = 0;
+    bool drop_rule = true;
 
     offset = nl_msg_start_nested(request, TCA_FLOWER_ACT);
     {
@@ -1522,6 +1533,7 @@ nl_msg_put_flower_acts(struct ofpbuf *request, struct tc_flower *flower)
             }
             break;
             case TC_ACT_OUTPUT: {
+                drop_rule = false;
                 ifindex = action->ifindex_out;
                 if (ifindex < 1) {
                     VLOG_ERR_RL(&error_rl, "%s: invalid ifindex: %d, type: %d",
@@ -1540,12 +1552,20 @@ nl_msg_put_flower_acts(struct ofpbuf *request, struct tc_flower *flower)
                 nl_msg_end_nested(request, act_offset);
             }
             break;
+            case TC_ACT_GOTO: {
+                drop_rule = false;
+                act_offset = nl_msg_start_nested(request, act_index++);
+                nl_msg_put_act_gact(request, action->chain);
+                nl_msg_put_act_cookie(request, &flower->act_cookie);
+                nl_msg_end_nested(request, act_offset);
+            }
+            break;
             }
         }
     }
-    if (!ifindex) {
+    if (drop_rule) {
         act_offset = nl_msg_start_nested(request, act_index++);
-        nl_msg_put_act_drop(request);
+        nl_msg_put_act_gact(request, 0);
         nl_msg_put_act_cookie(request, &flower->act_cookie);
         nl_msg_end_nested(request, act_offset);
     }
