@@ -382,6 +382,7 @@ nl_parse_flower_tunnel(struct nlattr **attrs, struct tc_flower *flower)
         ovs_be32 id = nl_attr_get_be32(attrs[TCA_FLOWER_KEY_ENC_KEY_ID]);
 
         flower->tunnel.id = be32_to_be64(id);
+        flower->tunnel.tunnel = true;
     }
     if (attrs[TCA_FLOWER_KEY_ENC_IPV4_SRC_MASK]) {
         flower->tunnel.ipv4.ipv4_src =
