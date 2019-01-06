@@ -43,6 +43,7 @@
 #include "uuid.h"
 #include "openvswitch/vlog.h"
 #include "openvswitch/match.h"
+#include "odp-netlink-xmacros.h"
 
 VLOG_DEFINE_THIS_MODULE(odp_util);
 
@@ -7093,12 +7094,49 @@ commit_odp_tunnel_action(const struct flow *flow, struct flow *base,
     }
 }
 
+struct ovs_key_field_properties {
+    int offset;
+    int size;
+};
+
+/* Compare the keys similary to memcmp, but each field separately.
+ * The offsets and sizes of each field is provided by field_properties
+ * argument.
+ * For fields with the same value, zero out their mask part in order not to
+ * rewrite them as it's unnecessary */
+static bool
+keycmp_mask(const void *key0, const void *key1,
+            struct ovs_key_field_properties *field_properties, void *mask)
+{
+    int field;
+    bool differ = false;
+
+    for (field = 0 ; ; field++) {
+        int size = field_properties[field].size;
+        int offset = field_properties[field].offset;
+        char *pkey0 = ((char *)key0) + offset;
+        char *pkey1 = ((char *)key1) + offset;
+        char *pmask = ((char *)mask) + offset;
+
+        if (size == 0)
+            break;
+
+        if (memcmp(pkey0, pkey1, size) == 0)
+            memset(pmask, 0, size);
+        else
+            differ = true;
+    }
+
+    return differ;
+}
+
 static bool
 commit(enum ovs_key_attr attr, bool use_masked_set,
        const void *key, void *base, void *mask, size_t size,
+       struct ovs_key_field_properties *field_properties,
        struct ofpbuf *odp_actions)
 {
-    if (memcmp(key, base, size)) {
+    if (keycmp_mask(key, base, field_properties, mask)) {
         bool fully_masked = odp_mask_is_exact(attr, mask, size);
 
         if (use_masked_set && !fully_masked) {
@@ -7140,6 +7178,12 @@ commit_set_ether_action(const struct flow *flow, struct flow *base_flow,
                         bool use_masked)
 {
     struct ovs_key_ethernet key, base, mask;
+    struct ovs_key_field_properties ovs_key_ethernet_field_properties[] = {
+#define __OVS_KEY_FIELD(type, name) {offsetof(struct ovs_key_ethernet, name), sizeof(type)},
+        __OVS_KEY_ETHERNET_FIELDS
+        {0, 0}
+#undef __OVS_KEY_FIELD
+    };
 
     if (flow->packet_type != htonl(PT_ETH)) {
         return;
@@ -7150,7 +7194,8 @@ commit_set_ether_action(const struct flow *flow, struct flow *base_flow,
     get_ethernet_key(&wc->masks, &mask);
 
     if (commit(OVS_KEY_ATTR_ETHERNET, use_masked,
-               &key, &base, &mask, sizeof key, odp_actions)) {
+               &key, &base, &mask, sizeof key,
+               ovs_key_ethernet_field_properties, odp_actions)) {
         put_ethernet_key(&base, base_flow);
         put_ethernet_key(&mask, &wc->masks);
     }
@@ -7276,6 +7321,12 @@ commit_set_ipv4_action(const struct flow *flow, struct flow *base_flow,
                        bool use_masked)
 {
     struct ovs_key_ipv4 key, mask, base;
+    struct ovs_key_field_properties ovs_key_ipv4_field_properties[] = {
+#define __OVS_KEY_FIELD(type, name) {offsetof(struct ovs_key_ipv4, name), sizeof(type)},
+        __OVS_KEY_IPV4_FIELDS
+        {0, 0}
+#undef __OVS_KEY_FIELD
+    };
 
     /* Check that nw_proto and nw_frag remain unchanged. */
     ovs_assert(flow->nw_proto == base_flow->nw_proto &&
@@ -7293,7 +7344,7 @@ commit_set_ipv4_action(const struct flow *flow, struct flow *base_flow,
     }
 
     if (commit(OVS_KEY_ATTR_IPV4, use_masked, &key, &base, &mask, sizeof key,
-               odp_actions)) {
+               ovs_key_ipv4_field_properties, odp_actions)) {
         put_ipv4_key(&base, base_flow, false);
         if (mask.ipv4_proto != 0) { /* Mask was changed by commit(). */
             put_ipv4_key(&mask, &wc->masks, true);
@@ -7331,6 +7382,12 @@ commit_set_ipv6_action(const struct flow *flow, struct flow *base_flow,
                        bool use_masked)
 {
     struct ovs_key_ipv6 key, mask, base;
+    struct ovs_key_field_properties ovs_key_ipv6_field_properties[] = {
+#define __OVS_KEY_FIELD(type, name) {offsetof(struct ovs_key_ipv6, name), sizeof(type)},
+        __OVS_KEY_IPV6_FIELDS
+        {0, 0}
+#undef __OVS_KEY_FIELD
+    };
 
     /* Check that nw_proto and nw_frag remain unchanged. */
     ovs_assert(flow->nw_proto == base_flow->nw_proto &&
@@ -7349,7 +7406,7 @@ commit_set_ipv6_action(const struct flow *flow, struct flow *base_flow,
     }
 
     if (commit(OVS_KEY_ATTR_IPV6, use_masked, &key, &base, &mask, sizeof key,
-               odp_actions)) {
+               ovs_key_ipv6_field_properties, odp_actions)) {
         put_ipv6_key(&base, base_flow, false);
         if (mask.ipv6_proto != 0) { /* Mask was changed by commit(). */
             put_ipv6_key(&mask, &wc->masks, true);
@@ -7385,13 +7442,19 @@ commit_set_arp_action(const struct flow *flow, struct flow *base_flow,
                       struct ofpbuf *odp_actions, struct flow_wildcards *wc)
 {
     struct ovs_key_arp key, mask, base;
+    struct ovs_key_field_properties ovs_key_arp_field_properties[] = {
+#define __OVS_KEY_FIELD(type, name) {offsetof(struct ovs_key_arp, name), sizeof(type)},
+        __OVS_KEY_ARP_FIELDS
+        {0, 0}
+#undef __OVS_KEY_FIELD
+    };
 
     get_arp_key(flow, &key);
     get_arp_key(base_flow, &base);
     get_arp_key(&wc->masks, &mask);
 
     if (commit(OVS_KEY_ATTR_ARP, true, &key, &base, &mask, sizeof key,
-               odp_actions)) {
+               ovs_key_arp_field_properties, odp_actions)) {
         put_arp_key(&base, base_flow);
         put_arp_key(&mask, &wc->masks);
         return SLOW_ACTION;
@@ -7420,6 +7483,12 @@ commit_set_icmp_action(const struct flow *flow, struct flow *base_flow,
                        struct ofpbuf *odp_actions, struct flow_wildcards *wc)
 {
     struct ovs_key_icmp key, mask, base;
+    struct ovs_key_field_properties ovs_key_icmp_field_properties[] = {
+#define __OVS_KEY_FIELD(type, name) {offsetof(struct ovs_key_icmp, name), sizeof(type)},
+        __OVS_KEY_ICMP_FIELDS
+        {0, 0}
+#undef __OVS_KEY_FIELD
+    };
     enum ovs_key_attr attr;
 
     if (is_icmpv4(flow, NULL)) {
@@ -7434,7 +7503,8 @@ commit_set_icmp_action(const struct flow *flow, struct flow *base_flow,
     get_icmp_key(base_flow, &base);
     get_icmp_key(&wc->masks, &mask);
 
-    if (commit(attr, false, &key, &base, &mask, sizeof key, odp_actions)) {
+    if (commit(attr, false, &key, &base, &mask, sizeof key,
+               ovs_key_icmp_field_properties, odp_actions)) {
         put_icmp_key(&base, base_flow);
         put_icmp_key(&mask, &wc->masks);
         return SLOW_ACTION;
@@ -7466,13 +7536,19 @@ commit_set_nd_action(const struct flow *flow, struct flow *base_flow,
                      struct flow_wildcards *wc, bool use_masked)
 {
     struct ovs_key_nd key, mask, base;
+    struct ovs_key_field_properties ovs_key_nd_field_properties[] = {
+#define __OVS_KEY_FIELD(type, name) {offsetof(struct ovs_key_nd, name), sizeof(type)},
+        __OVS_KEY_ND_FIELDS
+        {0, 0}
+#undef __OVS_KEY_FIELD
+    };
 
     get_nd_key(flow, &key);
     get_nd_key(base_flow, &base);
     get_nd_key(&wc->masks, &mask);
 
     if (commit(OVS_KEY_ATTR_ND, use_masked, &key, &base, &mask, sizeof key,
-               odp_actions)) {
+               ovs_key_nd_field_properties, odp_actions)) {
         put_nd_key(&base, base_flow);
         put_nd_key(&mask, &wc->masks);
         return SLOW_ACTION;
@@ -7679,6 +7755,12 @@ commit_set_port_action(const struct flow *flow, struct flow *base_flow,
 {
     enum ovs_key_attr key_type;
     union ovs_key_tp key, mask, base;
+    struct ovs_key_field_properties ovs_key_tp_field_properties[] = {
+#define __OVS_KEY_FIELD(type, name) {offsetof(struct ovs_key_tcp, name), sizeof(type)},
+        __OVS_KEY_TCP_FIELDS
+        {0, 0}
+#undef __OVS_KEY_FIELD
+    };
 
     /* Check if 'flow' really has an L3 header. */
     if (!flow->nw_proto) {
@@ -7704,7 +7786,7 @@ commit_set_port_action(const struct flow *flow, struct flow *base_flow,
     get_tp_key(&wc->masks, &mask);
 
     if (commit(key_type, use_masked, &key, &base, &mask, sizeof key,
-               odp_actions)) {
+               ovs_key_tp_field_properties, odp_actions)) {
         put_tp_key(&base, base_flow);
         put_tp_key(&mask, &wc->masks);
     }
@@ -7717,13 +7799,17 @@ commit_set_priority_action(const struct flow *flow, struct flow *base_flow,
                            bool use_masked)
 {
     uint32_t key, mask, base;
+    struct ovs_key_field_properties ovs_key_prio_field_properties[] = {
+        {0, sizeof(uint32_t)},
+        {0, 0}
+    };
 
     key = flow->skb_priority;
     base = base_flow->skb_priority;
     mask = wc->masks.skb_priority;
 
     if (commit(OVS_KEY_ATTR_PRIORITY, use_masked, &key, &base, &mask,
-               sizeof key, odp_actions)) {
+               sizeof key, ovs_key_prio_field_properties, odp_actions)) {
         base_flow->skb_priority = base;
         wc->masks.skb_priority = mask;
     }
@@ -7736,13 +7822,17 @@ commit_set_pkt_mark_action(const struct flow *flow, struct flow *base_flow,
                            bool use_masked)
 {
     uint32_t key, mask, base;
+    struct ovs_key_field_properties ovs_key_pkt_mark_field_properties[] = {
+        {0, sizeof(uint32_t)},
+        {0, 0}
+    };
 
     key = flow->pkt_mark;
     base = base_flow->pkt_mark;
     mask = wc->masks.pkt_mark;
 
     if (commit(OVS_KEY_ATTR_SKB_MARK, use_masked, &key, &base, &mask,
-               sizeof key, odp_actions)) {
+               sizeof key, ovs_key_pkt_mark_field_properties, odp_actions)) {
         base_flow->pkt_mark = base;
         wc->masks.pkt_mark = mask;
     }
