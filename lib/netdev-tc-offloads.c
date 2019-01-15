@@ -116,6 +116,7 @@ static struct netlink_field set_flower_map[][3] = {
 };
 
 static struct ovs_mutex ufid_lock = OVS_MUTEX_INITIALIZER;
+static struct ovs_mutex add_lock = OVS_MUTEX_INITIALIZER;
 
 /**
  * struct ufid_tc_data - data entry for ufid_tc hmap.
@@ -1247,6 +1248,8 @@ netdev_tc_flow_put(struct netdev *netdev, struct match *match,
 
     block_id = get_block_id_from_netdev(netdev);
     handle = get_ufid_tc_mapping(ufid, &chain, &prio, NULL);
+
+    ovs_mutex_lock(&add_lock); /*del and add need to be atomic with regards to handle */
     if (handle && prio) {
         VLOG_DBG_RL(&rl, "updating old chain: %d, prio: %d, handle: %d",
                     chain, prio, handle);
@@ -1258,7 +1261,8 @@ netdev_tc_flow_put(struct netdev *netdev, struct match *match,
         prio = get_prio_for_tc_flower(&flower);
         if (prio == 0) {
             VLOG_ERR_RL(&rl, "couldn't get tc prio: %s", ovs_strerror(ENOSPC));
-            return ENOSPC;
+            err = ENOSPC;
+            goto unlock;
         }
     }
 
@@ -1266,6 +1270,9 @@ netdev_tc_flow_put(struct netdev *netdev, struct match *match,
     flower.act_cookie.len = sizeof *ufid;
 
     err = tc_replace_flower(ifindex, chain, prio, handle, &flower, block_id);
+
+unlock:
+    ovs_mutex_unlock(&add_lock);
     if (!err) {
         add_ufid_tc_mapping(ufid, flower.chain, flower.prio, flower.handle,
                             netdev, ifindex);
