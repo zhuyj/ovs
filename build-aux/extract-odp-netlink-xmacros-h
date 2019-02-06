@@ -1,0 +1,55 @@
+#!/bin/bash
+
+hfile=$1
+
+function generate_fields_macros {
+    local struct_name=$1
+
+    # line_start is the line number where the definition of the struct begin
+    # line_end is the line number where the definition of the struct ends
+    line_start=`grep -nw $struct_name $hfile | grep { | cut -d ":" -f1`
+    num_lines=`tail -n +${line_start} $hfile | grep -n -m1 } | cut -d ":" -f1`
+    line_end=$((line_start+num_lines-1))
+
+
+    STRUCT=`echo $struct_name | tr [a-z] [A-Z]`
+    echo "#define __${STRUCT}_FIELDS \\"
+    # for all the field lines, including the terminating }, remove ";" and
+    # replace with a macro.
+    # 3 awk fields are for struct <struct name> <field_name>
+    # 2 awk fields are for <type> <field_name>
+    # else - terminating macro
+    awk -F ";" "NR>${line_start} && NR<=${line_end}"' {print $1}' $hfile |
+        awk '{
+            if (NF == 3)
+                print "    __OVS_KEY_FIELD(" $1,$2", " $3 ") \\";
+            else if (NF == 2)
+                print "    __OVS_KEY_FIELD(" $1", " $2 ") \\";
+            else
+                print "__OVS_KEY_FIELDS_END";
+            }'
+}
+
+
+echo "/* Generated automatically from <include/odp-netlink.h> -- do not modify! */"
+echo
+echo
+echo "#ifndef ODP_NETLINK_MACROS_H"
+echo "#define ODP_NETLINK_MACROS_H"
+echo
+echo "#define __OVS_KEY_FIELDS_END"
+echo
+
+generate_fields_macros "ovs_key_ethernet"
+generate_fields_macros "ovs_key_ipv4"
+generate_fields_macros "ovs_key_ipv6"
+generate_fields_macros "ovs_key_tcp"
+generate_fields_macros "ovs_key_udp"
+generate_fields_macros "ovs_key_sctp"
+generate_fields_macros "ovs_key_icmp"
+generate_fields_macros "ovs_key_icmpv6"
+generate_fields_macros "ovs_key_arp"
+generate_fields_macros "ovs_key_nd"
+
+echo
+echo "#endif"
