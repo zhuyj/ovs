@@ -839,7 +839,66 @@ static const struct nl_policy conntrack_policy[] = {
     [TCA_CONNTRACK_PARMS] = { .type = NL_A_UNSPEC,
                               .min_len = sizeof(struct tc_conntrack),
                               .optional = false, },
+    [TCA_CONNTRACK_NAT] = { .type = NL_A_FLAG, .optional = true, },
+    [TCA_CONNTRACK_NAT_SRC] = { .type = NL_A_FLAG, .optional = true, },
+    [TCA_CONNTRACK_NAT_DST] = { .type = NL_A_FLAG, .optional = true, },
+    [TCA_CONNTRACK_NAT_IP_MIN] = { .type = NL_A_U32, .optional = true, },
+    [TCA_CONNTRACK_NAT_IP_MAX] = { .type = NL_A_U32, .optional = true, },
+    [TCA_CONNTRACK_NAT_PORT_MIN] = { .type = NL_A_U16, .optional = true, },
+    [TCA_CONNTRACK_NAT_PORT_MAX] = { .type = NL_A_U16, .optional = true, },
 };
+
+static void
+nl_parse_act_conntrack_nat(struct nlattr **tb, struct tc_action *action)
+{
+    struct ct_nat_info *nat_action_info = &action->ct.nat;
+    bool ip_min_specified = false;
+    bool proto_num_min_specified = false;
+    bool ip_max_specified = false;
+    bool proto_num_max_specified = false;
+
+    if (!tb[TCA_CONNTRACK_NAT])
+        return;
+
+    nat_action_info->nat_action |= TC_NAT_ACTION;
+
+    if (tb[TCA_CONNTRACK_NAT_SRC])
+        nat_action_info->nat_action |= TC_NAT_ACTION_SRC;
+    if (tb[TCA_CONNTRACK_NAT_DST])
+        nat_action_info->nat_action |= TC_NAT_ACTION_DST;
+
+    if (tb[TCA_CONNTRACK_NAT_IP_MIN]) {
+        nat_action_info->min_addr.ipv4 = nl_attr_get_u32(tb[TCA_CONNTRACK_NAT_IP_MIN]);
+        ip_min_specified = true;
+    }
+    if (tb[TCA_CONNTRACK_NAT_IP_MAX]) {
+        nat_action_info->max_addr.ipv4 = nl_attr_get_u32(tb[TCA_CONNTRACK_NAT_IP_MAX]);
+        ip_max_specified = true;
+    }
+
+    if (tb[TCA_CONNTRACK_NAT_PORT_MIN]) {
+        nat_action_info->min_port = htons(nl_attr_get_u16(tb[TCA_CONNTRACK_NAT_PORT_MIN]));
+        proto_num_min_specified = true;
+    }
+    if (tb[TCA_CONNTRACK_NAT_PORT_MAX]) {
+        nat_action_info->max_port = htons(nl_attr_get_u16(tb[TCA_CONNTRACK_NAT_PORT_MAX]));
+        proto_num_max_specified = true;
+    }
+
+    if (ip_min_specified && !ip_max_specified) {
+        nat_action_info->max_addr = nat_action_info->min_addr;
+    }
+    if (proto_num_min_specified && !proto_num_max_specified) {
+        nat_action_info->max_port = nat_action_info->min_port;
+    }
+    if (proto_num_min_specified || proto_num_max_specified) {
+        if (nat_action_info->nat_action & TC_NAT_ACTION_SRC) {
+            nat_action_info->nat_action |= TC_NAT_ACTION_SRC_PORT;
+        } else if (nat_action_info->nat_action & TC_NAT_ACTION_DST) {
+            nat_action_info->nat_action |= TC_NAT_ACTION_DST_PORT;
+        }
+    }
+}
 
 static int
 nl_parse_act_conntrack(struct nlattr *options, struct tc_flower *flower)
@@ -865,6 +924,9 @@ nl_parse_act_conntrack(struct nlattr *options, struct tc_flower *flower)
     action->ct.mark_mask = ct->mark_mask;
     memcpy(&action->ct.label, ct->labels, sizeof action->ct.label);
     memcpy(&action->ct.label_mask, ct->labels_mask, sizeof action->ct.label_mask);
+
+    nl_parse_act_conntrack_nat(conntrack_attrs, action);
+
     action->type = TC_ACT_CT;
 
     return 0;
@@ -1377,6 +1439,31 @@ nl_msg_put_act_tunnel_key_set(struct ofpbuf *request, ovs_be64 id,
 }
 
 static void
+nl_msg_put_act_conntrack_nat(struct ofpbuf *request, struct tc_action *action)
+{
+    struct ct_nat_info *p = &action->ct.nat;
+
+    nl_msg_put_flag(request, TCA_CONNTRACK_NAT);
+
+    if (p->nat_action & TC_NAT_ACTION_SRC)
+        nl_msg_put_flag(request, TCA_CONNTRACK_NAT_SRC);
+    if (p->nat_action & TC_NAT_ACTION_DST)
+        nl_msg_put_flag(request, TCA_CONNTRACK_NAT_DST);
+
+    if (p->nat_action & (TC_NAT_ACTION_SRC | TC_NAT_ACTION_DST)) {
+        nl_msg_put_unspec(request, TCA_CONNTRACK_NAT_IP_MIN, &p->min_addr,
+                          sizeof(p->min_addr));
+        nl_msg_put_unspec(request, TCA_CONNTRACK_NAT_IP_MAX, &p->max_addr,
+                          sizeof(p->max_addr));
+    }
+
+    if (p->nat_action & (TC_NAT_ACTION_SRC_PORT | TC_NAT_ACTION_DST_PORT)) {
+        nl_msg_put_be16(request, TCA_CONNTRACK_NAT_PORT_MIN, p->min_port);
+        nl_msg_put_be16(request, TCA_CONNTRACK_NAT_PORT_MAX, p->max_port);
+    }
+}
+
+static void
 nl_msg_put_act_conntrack(struct ofpbuf *request, struct tc_action *action)
 {
     size_t offset;
@@ -1395,6 +1482,9 @@ nl_msg_put_act_conntrack(struct ofpbuf *request, struct tc_action *action)
         memcpy(ct.labels_mask, &action->ct.label_mask, sizeof ct.labels_mask);
 
         nl_msg_put_unspec(request, TCA_CONNTRACK_PARMS, &ct, sizeof ct);
+
+        if (action->ct.nat.nat_action & TC_NAT_ACTION)
+            nl_msg_put_act_conntrack_nat(request, action);
     }
     nl_msg_end_nested(request, offset);
 }

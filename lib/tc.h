@@ -137,6 +137,31 @@ enum tc_action_type {
     TC_ACT_CT,
 };
 
+/* TODO: can we re-use NAT_ACTION_SRC from OVS? */
+enum tc_nat_action {
+    TC_NAT_ACTION_SRC = 1 << 0,
+    TC_NAT_ACTION_SRC_PORT = 1 << 1,
+    TC_NAT_ACTION_DST = 1 << 2,
+    TC_NAT_ACTION_DST_PORT = 1 << 3,
+
+    TC_NAT_ACTION = 1 << 4,
+};
+
+struct ct_addr {
+    union {
+        __be32 ipv4;
+        /* TODO: support IPv6 */
+    };
+};
+
+struct ct_nat_info {
+    uint16_t nat_action;
+    struct ct_addr min_addr;
+    struct ct_addr max_addr;
+    ovs_be16 min_port;
+    ovs_be16 max_port;
+};
+
 struct tc_action {
     union {
         int chain;
@@ -171,6 +196,7 @@ struct tc_action {
             ovs_u128 label;
             ovs_u128 label_mask;
             bool commit;
+            struct ct_nat_info nat;
         } ct;
      };
 

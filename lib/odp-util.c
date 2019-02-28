@@ -1677,6 +1677,7 @@ ovs_parse_tnl_push(const char *s, struct ovs_action_push_tnl *data)
     return n;
 }
 
+/* TODO: re-use this? */
 struct ct_nat_params {
     bool snat;
     bool dnat;
