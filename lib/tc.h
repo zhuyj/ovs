@@ -196,6 +196,7 @@ struct tc_action {
             ovs_u128 label;
             ovs_u128 label_mask;
             bool commit;
+            bool clear;
             struct ct_nat_info nat;
         } ct;
      };

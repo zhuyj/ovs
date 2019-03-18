@@ -611,6 +611,12 @@ parse_tc_flower_to_match(struct tc_flower *flower,
             break;
             case TC_ACT_CT: {
                 struct ct_nat_info *nat_action_info = &action->ct.nat;
+
+                if (action->ct.clear) {
+                    nl_msg_put_flag(buf, OVS_ACTION_ATTR_CT_CLEAR);
+                    break;
+                }
+
                 size_t ct_offset = nl_msg_start_nested(buf, OVS_ACTION_ATTR_CT);
 
                 if (action->ct.commit)
@@ -1332,6 +1338,11 @@ netdev_tc_flow_put(struct netdev *netdev, struct match *match,
                     break;
                 }
             }
+            action->type = TC_ACT_CT;
+            flower.action_count++;
+        } else if (nl_attr_type(nla) == OVS_ACTION_ATTR_CT_CLEAR) {
+            /* TODO: a new action? */
+            action->ct.clear = true;
             action->type = TC_ACT_CT;
             flower.action_count++;
         } else {

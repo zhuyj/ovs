@@ -919,6 +919,7 @@ nl_parse_act_conntrack(struct nlattr *options, struct tc_flower *flower)
 
     action = &flower->actions[flower->action_count++];
     action->ct.commit = ct->commit;
+    action->ct.clear = ct->clear;
     action->ct.zone = ct->zone;
     action->ct.mark = ct->mark;
     action->ct.mark_mask = ct->mark_mask;
@@ -1474,6 +1475,7 @@ nl_msg_put_act_conntrack(struct ofpbuf *request, struct tc_action *action)
         struct tc_conntrack ct = {
                 .action = TC_ACT_PIPE,
                 .commit = action->ct.commit,
+                .clear = action->ct.clear,
                 .zone = action->ct.zone,
                 .mark = action->ct.mark,
                 .mark_mask = action->ct.mark_mask,
