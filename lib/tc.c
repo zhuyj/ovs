@@ -1772,7 +1772,7 @@ nl_msg_put_act_conntrack(struct ofpbuf *request, struct tc_action *action)
     size_t offset;
 
     nl_msg_put_string(request, TCA_ACT_KIND, "ct");
-    offset = nl_msg_start_nested(request, TCA_ACT_OPTIONS);
+    offset = nl_msg_start_nested(request, TCA_ACT_OPTIONS | NLA_F_NESTED);
     {
         struct tc_conntrack ct = {
                 .action = TC_ACT_PIPE,
