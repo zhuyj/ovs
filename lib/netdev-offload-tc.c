@@ -1691,10 +1691,10 @@ netdev_tc_flow_put(struct netdev *netdev, struct match *match,
         }
     }
 
-    if ((chain || recirc_act) && !info->recirc_id_shared_with_tc) {
-        VLOG_ERR_RL(&error_rl, "flow_put: recirc_id sharing not supported");
-        return EOPNOTSUPP;
-    }
+/*     if ((chain || recirc_act) && !info->recirc_id_shared_with_tc) { */
+/*         VLOG_ERR_RL(&error_rl, "flow_put: recirc_id sharing not supported"); */
+/*         return EOPNOTSUPP; */
+/*     } */
 
     if (get_ufid_tc_mapping(ufid, &id) == 0) {
         VLOG_DBG_RL(&rl, "updating old handle: %d prio: %d",

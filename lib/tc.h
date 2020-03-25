@@ -116,7 +116,7 @@ struct tc_flower_key {
     uint8_t ip_ttl;
     uint8_t ip_tos;
 
-    uint16_t ct_state;
+    uint8_t ct_state;
     uint16_t ct_zone;
     uint32_t ct_mark;
     ovs_u128 ct_label;

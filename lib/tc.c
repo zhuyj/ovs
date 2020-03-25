@@ -734,8 +734,8 @@ nl_parse_flower_ct_match(struct nlattr **attrs, struct tc_flower *flower) {
     attr_key = attrs[TCA_FLOWER_KEY_CT_STATE];
     attr_mask = attrs[TCA_FLOWER_KEY_CT_STATE_MASK];
     if (attr_mask) {
-        key->ct_state = nl_attr_get_u16(attr_key);
-        mask->ct_state = nl_attr_get_u16(attr_mask);
+        key->ct_state = nl_attr_get_u8(attr_key);
+        mask->ct_state = nl_attr_get_u8(attr_mask);
     }
 
     attr_key = attrs[TCA_FLOWER_KEY_CT_ZONE];
@@ -2754,6 +2754,8 @@ tc_replace_flower(struct tcf_id *id, struct tc_flower *flower)
         id->handle = tc->tcm_handle;
         ofpbuf_delete(reply);
     }
+
+    VLOG_ERR("%s: error: %d\n", __func__, error);
 
     return error;
 }
