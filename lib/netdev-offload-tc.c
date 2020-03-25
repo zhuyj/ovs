@@ -778,28 +778,24 @@ parse_tc_flower_to_match(struct tc_flower *flower,
             }
             break;
             case TC_ACT_CT: {
-                size_t ct_offset;
+                struct ct_nat_info *nat_action_info = &action->ct.nat;
 
                 if (action->ct.clear) {
                     nl_msg_put_flag(buf, OVS_ACTION_ATTR_CT_CLEAR);
                     break;
                 }
 
-                ct_offset = nl_msg_start_nested(buf, OVS_ACTION_ATTR_CT);
+                size_t ct_offset = nl_msg_start_nested(buf, OVS_ACTION_ATTR_CT);
 
-                if (action->ct.commit) {
+                if (action->ct.commit)
                     nl_msg_put_flag(buf, OVS_CT_ATTR_COMMIT);
-                }
 
-                if (action->ct.zone) {
+                if (action->ct.zone)
                     nl_msg_put_u16(buf, OVS_CT_ATTR_ZONE, action->ct.zone);
-                }
 
                 if (action->ct.mark_mask) {
-                    uint32_t mark_and_mask[2] = { action->ct.mark,
-                                                  action->ct.mark_mask };
-                    nl_msg_put_unspec(buf, OVS_CT_ATTR_MARK, &mark_and_mask,
-                                      sizeof mark_and_mask);
+                    uint32_t mark_and_mask[2] = { action->ct.mark, action->ct.mark_mask };
+                    nl_msg_put_unspec(buf, OVS_CT_ATTR_MARK, &mark_and_mask, sizeof mark_and_mask);
                 }
 
                 if (!ovs_u128_is_zero(action->ct.label_mask)) {
@@ -808,42 +804,30 @@ parse_tc_flower_to_match(struct tc_flower *flower,
                         ovs_u128 mask;
                     } *ct_label;
 
-                    ct_label = nl_msg_put_unspec_uninit(buf,
-                                                        OVS_CT_ATTR_LABELS,
+                    ct_label = nl_msg_put_unspec_uninit(buf, OVS_CT_ATTR_LABELS,
                                                         sizeof *ct_label);
                     ct_label->key = action->ct.label;
                     ct_label->mask = action->ct.label_mask;
                 }
 
-                if (action->ct.nat_type) {
-                    size_t nat_offset = nl_msg_start_nested(buf,
-                                                            OVS_CT_ATTR_NAT);
+                if (nat_action_info->nat_action) {
+                    size_t nat_offset = nl_msg_start_nested(buf, OVS_CT_ATTR_NAT);
 
-                    if (action->ct.nat_type == TC_NAT_SRC) {
+                    if (nat_action_info->nat_action & TC_NAT_ACTION_SRC)
                         nl_msg_put_flag(buf, OVS_NAT_ATTR_SRC);
-                    } else if (action->ct.nat_type == TC_NAT_DST) {
-                        nl_msg_put_flag(buf, OVS_NAT_ATTR_DST);
+                    if (nat_action_info->nat_action & TC_NAT_ACTION_DST)
+                        nl_msg_put_flag(buf, TC_NAT_ACTION_DST);
+
+                    if (nat_action_info->nat_action & (TC_NAT_ACTION_SRC |
+                                                       TC_NAT_ACTION_DST)) {
+                        nl_msg_put_be32(buf, OVS_NAT_ATTR_IP_MIN, nat_action_info->min_addr.ipv4);
+                        nl_msg_put_be32(buf, OVS_NAT_ATTR_IP_MAX, nat_action_info->max_addr.ipv4);
                     }
 
-                    if (action->ct.range.ip_family == AF_INET) {
-                        nl_msg_put_be32(buf, OVS_NAT_ATTR_IP_MIN,
-                                        action->ct.range.ipv4.min);
-                        nl_msg_put_be32(buf, OVS_NAT_ATTR_IP_MAX,
-                                        action->ct.range.ipv4.max);
-                    } else if (action->ct.range.ip_family == AF_INET6) {
-                        nl_msg_put_in6_addr(buf, OVS_NAT_ATTR_IP_MIN,
-                                            &action->ct.range.ipv6.min);
-                        nl_msg_put_in6_addr(buf, OVS_NAT_ATTR_IP_MAX,
-                                            &action->ct.range.ipv6.max);
-                    }
-
-                    if (action->ct.range.port.min) {
-                        nl_msg_put_u16(buf, OVS_NAT_ATTR_PROTO_MIN,
-                                       ntohs(action->ct.range.port.min));
-                        if (action->ct.range.port.max) {
-                            nl_msg_put_u16(buf, OVS_NAT_ATTR_PROTO_MAX,
-                                           ntohs(action->ct.range.port.max));
-                        }
+                    if (nat_action_info->nat_action & (TC_NAT_ACTION_SRC_PORT |
+                                                       TC_NAT_ACTION_DST_PORT)) {
+                        nl_msg_put_be16(buf, OVS_NAT_ATTR_PROTO_MIN, nat_action_info->min_port);
+                        nl_msg_put_be16(buf, OVS_NAT_ATTR_PROTO_MAX, nat_action_info->max_port);
                     }
 
                     nl_msg_end_nested(buf, nat_offset);
@@ -938,126 +922,6 @@ parse_mpls_set_action(struct tc_flower *flower, struct tc_action *action,
         action->type = TC_ACT_MPLS_SET;
         flower->action_count++;
 
-        return 0;
-}
-
-static int
-parse_put_flow_nat_action(struct tc_action *action,
-                          const struct nlattr *nat,
-                          size_t nat_len)
-{
-    const struct nlattr *nat_attr;
-    size_t nat_left;
-
-    action->ct.nat_type = TC_NAT_RESTORE;
-    NL_ATTR_FOR_EACH_UNSAFE (nat_attr, nat_left, nat, nat_len) {
-        switch (nl_attr_type(nat_attr)) {
-            case OVS_NAT_ATTR_SRC: {
-                action->ct.nat_type = TC_NAT_SRC;
-            };
-            break;
-            case OVS_NAT_ATTR_DST: {
-                action->ct.nat_type = TC_NAT_DST;
-            };
-            break;
-            case OVS_NAT_ATTR_IP_MIN: {
-                if (nl_attr_get_size(nat_attr) == sizeof(ovs_be32)) {
-                    ovs_be32 addr = nl_attr_get_be32(nat_attr);
-
-                    action->ct.range.ipv4.min = addr;
-                    action->ct.range.ip_family = AF_INET;
-                } else {
-                    struct in6_addr addr = nl_attr_get_in6_addr(nat_attr);
-
-                    action->ct.range.ipv6.min = addr;
-                    action->ct.range.ip_family = AF_INET6;
-                }
-            };
-            break;
-            case OVS_NAT_ATTR_IP_MAX: {
-                if (nl_attr_get_size(nat_attr) == sizeof(ovs_be32)) {
-                    ovs_be32 addr = nl_attr_get_be32(nat_attr);
-
-                    action->ct.range.ipv4.max = addr;
-                    action->ct.range.ip_family = AF_INET;
-                } else {
-                    struct in6_addr addr = nl_attr_get_in6_addr(nat_attr);
-
-                    action->ct.range.ipv6.max = addr;
-                    action->ct.range.ip_family = AF_INET6;
-                }
-            };
-            break;
-            case OVS_NAT_ATTR_PROTO_MIN: {
-                action->ct.range.port.min = htons(nl_attr_get_u16(nat_attr));
-            };
-            break;
-            case OVS_NAT_ATTR_PROTO_MAX: {
-                action->ct.range.port.max = htons(nl_attr_get_u16(nat_attr));
-            };
-            break;
-        }
-    }
-    return 0;
-}
-
-static int
-parse_put_flow_ct_action(struct tc_flower *flower,
-                         struct tc_action *action,
-                         const struct nlattr *ct,
-                         size_t ct_len)
-{
-        const struct nlattr *ct_attr;
-        size_t ct_left;
-        int err;
-
-        NL_ATTR_FOR_EACH_UNSAFE (ct_attr, ct_left, ct, ct_len) {
-            switch (nl_attr_type(ct_attr)) {
-                case OVS_CT_ATTR_COMMIT: {
-                        action->ct.commit = true;
-                }
-                break;
-                case OVS_CT_ATTR_ZONE: {
-                    action->ct.zone = nl_attr_get_u16(ct_attr);
-                }
-                break;
-                case OVS_CT_ATTR_NAT: {
-                    const struct nlattr *nat = nl_attr_get(ct_attr);
-                    const size_t nat_len = nl_attr_get_size(ct_attr);
-
-                    err = parse_put_flow_nat_action(action, nat, nat_len);
-                    if (err) {
-                        return err;
-                    }
-                }
-                break;
-                case OVS_CT_ATTR_MARK: {
-                    const struct {
-                        uint32_t key;
-                        uint32_t mask;
-                    } *ct_mark;
-
-                    ct_mark = nl_attr_get_unspec(ct_attr, sizeof *ct_mark);
-                    action->ct.mark = ct_mark->key;
-                    action->ct.mark_mask = ct_mark->mask;
-                }
-                break;
-                case OVS_CT_ATTR_LABELS: {
-                    const struct {
-                        ovs_u128 key;
-                        ovs_u128 mask;
-                    } *ct_label;
-
-                    ct_label = nl_attr_get_unspec(ct_attr, sizeof *ct_label);
-                    action->ct.label = ct_label->key;
-                    action->ct.label_mask = ct_label->mask;
-                }
-                break;
-            }
-        }
-
-        action->type = TC_ACT_CT;
-        flower->action_count++;
         return 0;
 }
 
@@ -1698,14 +1562,122 @@ netdev_tc_flow_put(struct netdev *netdev, struct match *match,
         } else if (nl_attr_type(nla) == OVS_ACTION_ATTR_CT) {
             const struct nlattr *ct = nl_attr_get(nla);
             const size_t ct_len = nl_attr_get_size(nla);
+            const struct nlattr *ct_attr;
+            size_t ct_left;
 
-            err = parse_put_flow_ct_action(&flower, action, ct, ct_len);
-            if (err) {
-                return err;
+            /*
+             * OVS can assembly the fragmented packets and do CT actions,
+             * but TC doesn't support that currently. So return EOPNOTSUPP.
+             */
+            if (flower.key.flags & TCA_FLOWER_KEY_FLAGS_IS_FRAGMENT)
+                return EOPNOTSUPP;
+
+            NL_ATTR_FOR_EACH_UNSAFE(ct_attr, ct_left, ct, ct_len) {
+                switch (nl_attr_type(ct_attr)) {
+                    case OVS_CT_ATTR_COMMIT: {
+                            action->ct.commit = true;
+                    }
+                    break;
+                    case OVS_CT_ATTR_ZONE: {
+                        action->ct.zone = nl_attr_get_u16(ct_attr);
+                    }
+                    break;
+                    case OVS_CT_ATTR_MARK: {
+                        const struct {
+                            uint32_t key;
+                            uint32_t mask;
+                        } *ct_mark;
+
+                        ct_mark = nl_attr_get_unspec(ct_attr, sizeof *ct_mark);
+                        action->ct.mark = ct_mark->key;
+                        action->ct.mark_mask = ct_mark->mask;
+                    }
+                    break;
+                    case OVS_CT_ATTR_LABELS: {
+                        const struct {
+                            ovs_u128 key;
+                            ovs_u128 mask;
+                        } *ct_label;
+
+                        ct_label = nl_attr_get_unspec(ct_attr, sizeof *ct_label);
+                        action->ct.label = ct_label->key;
+                        action->ct.label_mask = ct_label->mask;
+                    }
+                    break;
+                    case OVS_CT_ATTR_NAT: {
+                        struct ct_nat_info *nat_action_info = &action->ct.nat;
+                        bool ip_min_specified = false;
+                        bool proto_num_min_specified = false;
+                        bool ip_max_specified = false;
+                        bool proto_num_max_specified = false;
+                        const struct nlattr *b_nest;
+                        unsigned int left_nest;
+
+                        /* TODO: that is right? */
+                        nat_action_info->nat_action |= TC_NAT_ACTION;
+
+                        NL_NESTED_FOR_EACH_UNSAFE (b_nest, left_nest, ct_attr) {
+                            enum ovs_nat_attr sub_type_nest = nl_attr_type(b_nest);
+
+                            switch (sub_type_nest) {
+                            case OVS_NAT_ATTR_SRC:
+                            case OVS_NAT_ATTR_DST:
+                                nat_action_info->nat_action |= ((sub_type_nest == OVS_NAT_ATTR_SRC)
+                                                          ? TC_NAT_ACTION_SRC : TC_NAT_ACTION_DST);
+                            break;
+                            case OVS_NAT_ATTR_IP_MIN:
+                                memcpy(&nat_action_info->min_addr,
+                                    nl_attr_get(b_nest),
+                                    nl_attr_get_size(b_nest));
+                                ip_min_specified = true;
+                            case OVS_NAT_ATTR_IP_MAX:
+                                memcpy(&nat_action_info->max_addr,
+                                    nl_attr_get(b_nest),
+                                    nl_attr_get_size(b_nest));
+                                ip_max_specified = true;
+                            break;
+                            case OVS_NAT_ATTR_PROTO_MIN:
+                                nat_action_info->min_port =
+                                    nl_attr_get_u16(b_nest);
+                                proto_num_min_specified = true;
+                            break;
+                            case OVS_NAT_ATTR_PROTO_MAX:
+                                nat_action_info->max_port =
+                                    nl_attr_get_u16(b_nest);
+                                proto_num_max_specified = true;
+                            break;
+                            case OVS_NAT_ATTR_PERSISTENT:
+                            case OVS_NAT_ATTR_PROTO_HASH:
+                            case OVS_NAT_ATTR_PROTO_RANDOM:
+                                VLOG_INFO("TC NAT: persistent, hash and random are not supported yet");
+                            break;
+                            case OVS_NAT_ATTR_UNSPEC:
+                            case __OVS_NAT_ATTR_MAX:
+                                VLOG_ERR("Unknown nat attribute (%d)", sub_type_nest);
+                                return EINVAL;
+                            break;
+                            }
+                        }
+
+                        if (ip_min_specified && !ip_max_specified) {
+                            nat_action_info->max_addr = nat_action_info->min_addr;
+                        }
+                        if (proto_num_min_specified && !proto_num_max_specified) {
+                            nat_action_info->max_port = nat_action_info->min_port;
+                        }
+                        if (proto_num_min_specified || proto_num_max_specified) {
+                            if (nat_action_info->nat_action & TC_NAT_ACTION_SRC) {
+                                nat_action_info->nat_action |= TC_NAT_ACTION_SRC_PORT;
+                            } else if (nat_action_info->nat_action & TC_NAT_ACTION_DST) {
+                                nat_action_info->nat_action |= TC_NAT_ACTION_DST_PORT;
+                            }
+                        }
+                    }
+                    break;
+
+                }
             }
-        } else if (nl_attr_type(nla) == OVS_ACTION_ATTR_CT_CLEAR) {
             action->type = TC_ACT_CT;
-            action->ct.clear = true;
             flower.action_count++;
         } else if (nl_attr_type(nla) == OVS_ACTION_ATTR_RECIRC) {
             action->type = TC_ACT_GOTO;

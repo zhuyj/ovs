@@ -1272,121 +1272,99 @@ nl_parse_act_mirred(struct nlattr *options, struct tc_flower *flower)
     return 0;
 }
 
-static const struct nl_policy ct_policy[] = {
-    [TCA_CT_PARMS] = { .type = NL_A_UNSPEC,
-                              .min_len = sizeof(struct tc_ct),
+static const struct nl_policy conntrack_policy[] = {
+    [TCA_CONNTRACK_PARMS] = { .type = NL_A_UNSPEC,
+                              .min_len = sizeof(struct tc_conntrack),
                               .optional = false, },
-    [TCA_CT_ACTION] = { .type = NL_A_U16,
-                         .optional = true, },
-    [TCA_CT_ZONE] = { .type = NL_A_U16,
-                      .optional = true, },
-    [TCA_CT_MARK] = { .type = NL_A_U32,
-                       .optional = true, },
-    [TCA_CT_MARK_MASK] = { .type = NL_A_U32,
-                            .optional = true, },
-    [TCA_CT_LABELS] = { .type = NL_A_UNSPEC,
-                         .optional = true, },
-    [TCA_CT_LABELS_MASK] = { .type = NL_A_UNSPEC,
-                              .optional = true, },
-    [TCA_CT_NAT_IPV4_MIN] = { .type = NL_A_U32,
-                              .optional = true, },
-    [TCA_CT_NAT_IPV4_MAX] = { .type = NL_A_U32,
-                              .optional = true, },
-    [TCA_CT_NAT_IPV6_MIN] = { .min_len = sizeof(struct in6_addr),
-                              .type = NL_A_UNSPEC,
-                              .optional = true },
-    [TCA_CT_NAT_IPV6_MAX] = { .min_len = sizeof(struct in6_addr),
-                              .type = NL_A_UNSPEC,
-                               .optional = true },
-    [TCA_CT_NAT_PORT_MIN] = { .type = NL_A_U16,
-                              .optional = true, },
-    [TCA_CT_NAT_PORT_MAX] = { .type = NL_A_U16,
-                              .optional = true, },
+    [TCA_CONNTRACK_NAT] = { .type = NL_A_FLAG, .optional = true, },
+    [TCA_CONNTRACK_NAT_SRC] = { .type = NL_A_FLAG, .optional = true, },
+    [TCA_CONNTRACK_NAT_DST] = { .type = NL_A_FLAG, .optional = true, },
+    [TCA_CONNTRACK_NAT_IP_MIN] = { .type = NL_A_U32, .optional = true, },
+    [TCA_CONNTRACK_NAT_IP_MAX] = { .type = NL_A_U32, .optional = true, },
+    [TCA_CONNTRACK_NAT_PORT_MIN] = { .type = NL_A_U16, .optional = true, },
+    [TCA_CONNTRACK_NAT_PORT_MAX] = { .type = NL_A_U16, .optional = true, },
 };
+
+static void
+nl_parse_act_conntrack_nat(struct nlattr **tb, struct tc_action *action)
+{
+    struct ct_nat_info *nat_action_info = &action->ct.nat;
+    bool ip_min_specified = false;
+    bool proto_num_min_specified = false;
+    bool ip_max_specified = false;
+    bool proto_num_max_specified = false;
+
+    if (!tb[TCA_CONNTRACK_NAT])
+        return;
+
+    nat_action_info->nat_action |= TC_NAT_ACTION;
+
+    if (tb[TCA_CONNTRACK_NAT_SRC])
+        nat_action_info->nat_action |= TC_NAT_ACTION_SRC;
+    if (tb[TCA_CONNTRACK_NAT_DST])
+        nat_action_info->nat_action |= TC_NAT_ACTION_DST;
+
+    if (tb[TCA_CONNTRACK_NAT_IP_MIN]) {
+        nat_action_info->min_addr.ipv4 = nl_attr_get_u32(tb[TCA_CONNTRACK_NAT_IP_MIN]);
+        ip_min_specified = true;
+    }
+    if (tb[TCA_CONNTRACK_NAT_IP_MAX]) {
+        nat_action_info->max_addr.ipv4 = nl_attr_get_u32(tb[TCA_CONNTRACK_NAT_IP_MAX]);
+        ip_max_specified = true;
+    }
+
+    if (tb[TCA_CONNTRACK_NAT_PORT_MIN]) {
+        nat_action_info->min_port = htons(nl_attr_get_u16(tb[TCA_CONNTRACK_NAT_PORT_MIN]));
+        proto_num_min_specified = true;
+    }
+    if (tb[TCA_CONNTRACK_NAT_PORT_MAX]) {
+        nat_action_info->max_port = htons(nl_attr_get_u16(tb[TCA_CONNTRACK_NAT_PORT_MAX]));
+        proto_num_max_specified = true;
+    }
+
+    if (ip_min_specified && !ip_max_specified) {
+        nat_action_info->max_addr = nat_action_info->min_addr;
+    }
+    if (proto_num_min_specified && !proto_num_max_specified) {
+        nat_action_info->max_port = nat_action_info->min_port;
+    }
+    if (proto_num_min_specified || proto_num_max_specified) {
+        if (nat_action_info->nat_action & TC_NAT_ACTION_SRC) {
+            nat_action_info->nat_action |= TC_NAT_ACTION_SRC_PORT;
+        } else if (nat_action_info->nat_action & TC_NAT_ACTION_DST) {
+            nat_action_info->nat_action |= TC_NAT_ACTION_DST_PORT;
+        }
+    }
+}
 
 static int
 nl_parse_act_ct(struct nlattr *options, struct tc_flower *flower)
 {
-    struct nlattr *ct_attrs[ARRAY_SIZE(ct_policy)];
-    const struct nlattr *ct_parms;
+    struct nlattr *conntrack_attrs[ARRAY_SIZE(conntrack_policy)];
+    const struct tc_conntrack *ct;
+    const struct nlattr *conntrack_parms;
     struct tc_action *action;
-    const struct tc_ct *ct;
-    uint16_t ct_action = 0;
 
-    if (!nl_parse_nested(options, ct_policy, ct_attrs,
-                         ARRAY_SIZE(ct_policy))) {
-        VLOG_ERR_RL(&error_rl, "failed to parse ct action options");
+    if (!nl_parse_nested(options, conntrack_policy, conntrack_attrs,
+                         ARRAY_SIZE(conntrack_policy))) {
+        VLOG_ERR_RL(&error_rl, "failed to parse conntrack action options");
         return EPROTO;
     }
 
-    ct_parms = ct_attrs[TCA_CT_PARMS];
-    ct = nl_attr_get_unspec(ct_parms, sizeof *ct);
-
-    if (ct_attrs[TCA_CT_ACTION]) {
-        ct_action = nl_attr_get_u16(ct_attrs[TCA_CT_ACTION]);
-    }
+    conntrack_parms = conntrack_attrs[TCA_CONNTRACK_PARMS];
+    ct = nl_attr_get_unspec(conntrack_parms, sizeof *ct);
 
     action = &flower->actions[flower->action_count++];
-    action->ct.clear = ct_action & TCA_CT_ACT_CLEAR;
-    if (!action->ct.clear) {
-        struct nlattr *zone = ct_attrs[TCA_CT_ZONE];
-        struct nlattr *mark = ct_attrs[TCA_CT_MARK];
-        struct nlattr *mark_mask = ct_attrs[TCA_CT_MARK_MASK];
-        struct nlattr *label = ct_attrs[TCA_CT_LABELS];
-        struct nlattr *label_mask = ct_attrs[TCA_CT_LABELS_MASK];
+    action->ct.commit = ct->commit;
+    action->ct.clear = ct->clear;
+    action->ct.zone = ct->zone;
+    action->ct.mark = ct->mark;
+    action->ct.mark_mask = ct->mark_mask;
+    memcpy(&action->ct.label, ct->labels, sizeof action->ct.label);
+    memcpy(&action->ct.label_mask, ct->labels_mask, sizeof action->ct.label_mask);
 
-        action->ct.commit = ct_action & TCA_CT_ACT_COMMIT;
-        action->ct.force = ct_action & TCA_CT_ACT_FORCE;
+    nl_parse_act_conntrack_nat(conntrack_attrs, action);
 
-        action->ct.zone = zone ? nl_attr_get_u16(zone) : 0;
-        action->ct.mark = mark ? nl_attr_get_u32(mark) : 0;
-        action->ct.mark_mask = mark_mask ? nl_attr_get_u32(mark_mask) : 0;
-        action->ct.label = label? nl_attr_get_u128(label) : OVS_U128_ZERO;
-        action->ct.label_mask = label_mask ?
-                                nl_attr_get_u128(label_mask) : OVS_U128_ZERO;
-
-        if (ct_action & TCA_CT_ACT_NAT) {
-            struct nlattr *ipv4_min = ct_attrs[TCA_CT_NAT_IPV4_MIN];
-            struct nlattr *ipv4_max = ct_attrs[TCA_CT_NAT_IPV4_MAX];
-            struct nlattr *ipv6_min = ct_attrs[TCA_CT_NAT_IPV6_MIN];
-            struct nlattr *ipv6_max = ct_attrs[TCA_CT_NAT_IPV6_MAX];
-            struct nlattr *port_min = ct_attrs[TCA_CT_NAT_PORT_MIN];
-            struct nlattr *port_max = ct_attrs[TCA_CT_NAT_PORT_MAX];
-
-            action->ct.nat_type = TC_NAT_RESTORE;
-            if (ct_action & TCA_CT_ACT_NAT_SRC) {
-                action->ct.nat_type = TC_NAT_SRC;
-            } else if (ct_action & TCA_CT_ACT_NAT_DST) {
-                action->ct.nat_type = TC_NAT_DST;
-            }
-
-            if (ipv4_min) {
-                action->ct.range.ip_family = AF_INET;
-                action->ct.range.ipv4.min = nl_attr_get_be32(ipv4_min);
-                if (ipv4_max) {
-                    ovs_be32 addr = nl_attr_get_be32(ipv4_max);
-
-                    action->ct.range.ipv4.max = addr;
-                }
-            } else if (ipv6_min) {
-                action->ct.range.ip_family = AF_INET6;
-                action->ct.range.ipv6.min
-                    = nl_attr_get_in6_addr(ipv6_min);
-                if (ipv6_max) {
-                    struct in6_addr addr = nl_attr_get_in6_addr(ipv6_max);
-
-                    action->ct.range.ipv6.max = addr;
-                }
-            }
-
-            if (port_min) {
-                action->ct.range.port.min = nl_attr_get_be16(port_min);
-                if (port_max) {
-                    action->ct.range.port.max = nl_attr_get_be16(port_max);
-                }
-            }
-        }
-    }
     action->type = TC_ACT_CT;
 
     return 0;
@@ -2079,88 +2057,53 @@ nl_msg_put_act_gact(struct ofpbuf *request, uint32_t chain)
 }
 
 static void
+nl_msg_put_act_conntrack_nat(struct ofpbuf *request, struct tc_action *action)
+{
+    struct ct_nat_info *p = &action->ct.nat;
+
+    nl_msg_put_flag(request, TCA_CONNTRACK_NAT);
+
+    if (p->nat_action & TC_NAT_ACTION_SRC)
+        nl_msg_put_flag(request, TCA_CONNTRACK_NAT_SRC);
+    if (p->nat_action & TC_NAT_ACTION_DST)
+        nl_msg_put_flag(request, TCA_CONNTRACK_NAT_DST);
+
+    if (p->nat_action & (TC_NAT_ACTION_SRC | TC_NAT_ACTION_DST)) {
+        nl_msg_put_unspec(request, TCA_CONNTRACK_NAT_IP_MIN, &p->min_addr,
+                          sizeof(p->min_addr));
+        nl_msg_put_unspec(request, TCA_CONNTRACK_NAT_IP_MAX, &p->max_addr,
+                          sizeof(p->max_addr));
+    }
+
+    if (p->nat_action & (TC_NAT_ACTION_SRC_PORT | TC_NAT_ACTION_DST_PORT)) {
+        nl_msg_put_be16(request, TCA_CONNTRACK_NAT_PORT_MIN, p->min_port);
+        nl_msg_put_be16(request, TCA_CONNTRACK_NAT_PORT_MAX, p->max_port);
+    }
+}
+
+static void
 nl_msg_put_act_ct(struct ofpbuf *request, struct tc_action *action)
 {
-    uint16_t ct_action = 0;
     size_t offset;
 
     nl_msg_put_string(request, TCA_ACT_KIND, "ct");
     offset = nl_msg_start_nested(request, TCA_ACT_OPTIONS | NLA_F_NESTED);
     {
-        struct tc_ct ct = {
+        struct tc_conntrack ct = {
                 .action = TC_ACT_PIPE,
+                .commit = action->ct.commit,
+                .clear = action->ct.clear,
+                .zone = action->ct.zone,
+                .mark = action->ct.mark,
+                .mark_mask = action->ct.mark_mask,
         };
+        memcpy(ct.labels, &action->ct.label, sizeof ct.labels);
+        memcpy(ct.labels_mask, &action->ct.label_mask, sizeof ct.labels_mask);
 
-        if (!action->ct.clear) {
-            if (action->ct.zone) {
-                nl_msg_put_u16(request, TCA_CT_ZONE, action->ct.zone);
-            }
+        nl_msg_put_unspec(request, TCA_CONNTRACK_PARMS, &ct, sizeof ct);
 
-            if (!is_all_zeros(&action->ct.label_mask,
-                              sizeof action->ct.label_mask)) {
-                nl_msg_put_u128(request, TCA_CT_LABELS,
-                                action->ct.label);
-                nl_msg_put_u128(request, TCA_CT_LABELS_MASK,
-                                action->ct.label_mask);
-            }
-
-            if (action->ct.mark_mask) {
-                nl_msg_put_u32(request, TCA_CT_MARK,
-                               action->ct.mark);
-                nl_msg_put_u32(request, TCA_CT_MARK_MASK,
-                               action->ct.mark_mask);
-            }
-
-            if (action->ct.commit) {
-                ct_action = TCA_CT_ACT_COMMIT;
-                if (action->ct.force) {
-                    ct_action |= TCA_CT_ACT_FORCE;
-                }
-            }
-
-            if (action->ct.nat_type) {
-                ct_action |= TCA_CT_ACT_NAT;
-
-                if (action->ct.nat_type == TC_NAT_SRC) {
-                    ct_action |= TCA_CT_ACT_NAT_SRC;
-                } else if (action->ct.nat_type == TC_NAT_DST) {
-                    ct_action |= TCA_CT_ACT_NAT_DST;
-                }
-
-                if (action->ct.range.ip_family == AF_INET) {
-                    nl_msg_put_be32(request, TCA_CT_NAT_IPV4_MIN,
-                                    action->ct.range.ipv4.min);
-                    if (action->ct.range.ipv4.max) {
-                        nl_msg_put_be32(request, TCA_CT_NAT_IPV4_MAX,
-                                    action->ct.range.ipv4.max);
-                    }
-                } else if (action->ct.range.ip_family == AF_INET6) {
-                    size_t ipv6_sz = sizeof(action->ct.range.ipv6.max);
-
-                    nl_msg_put_in6_addr(request, TCA_CT_NAT_IPV6_MIN,
-                                        &action->ct.range.ipv6.min);
-                    if (!is_all_zeros(&action->ct.range.ipv6.max,
-                                      ipv6_sz)) {
-                        nl_msg_put_in6_addr(request, TCA_CT_NAT_IPV6_MAX,
-                                            &action->ct.range.ipv6.max);
-                    }
-                }
-
-                if (action->ct.range.port.min) {
-                    nl_msg_put_be16(request, TCA_CT_NAT_PORT_MIN,
-                                    action->ct.range.port.min);
-                    if (action->ct.range.port.max) {
-                        nl_msg_put_be16(request, TCA_CT_NAT_PORT_MAX,
-                                        action->ct.range.port.max);
-                    }
-                }
-            }
-        } else {
-            ct_action = TCA_CT_ACT_CLEAR;
-        }
-
-        nl_msg_put_u16(request, TCA_CT_ACTION, ct_action);
-        nl_msg_put_unspec(request, TCA_CT_PARMS, &ct, sizeof ct);
+        if (action->ct.nat.nat_action & TC_NAT_ACTION)
+            nl_msg_put_act_conntrack_nat(request, action);
     }
     nl_msg_end_nested(request, offset);
 }
