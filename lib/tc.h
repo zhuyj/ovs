@@ -165,13 +165,6 @@ enum tc_action_type {
     TC_ACT_CT,
 };
 
-enum nat_type {
-    TC_NO_NAT = 0,
-    TC_NAT_SRC,
-    TC_NAT_DST,
-    TC_NAT_RESTORE,
-};
-
 struct tc_action {
     union {
         int chain;
@@ -213,38 +206,6 @@ struct tc_action {
             } ipv6;
             struct tun_metadata data;
         } encap;
-
-        struct {
-            uint16_t zone;
-            uint32_t mark;
-            uint32_t mark_mask;
-            ovs_u128 label;
-            ovs_u128 label_mask;
-            uint8_t nat_type;
-            struct {
-                uint8_t ip_family;
-
-                union {
-                    struct {
-                        ovs_be32 min;
-                        ovs_be32 max;
-                    } ipv4;
-                    struct {
-                        struct in6_addr min;
-                        struct in6_addr max;
-                    } ipv6;
-                };
-
-                union {
-                    ovs_be16 min;
-                    ovs_be16 max;
-                } port;
-
-            } range;
-            bool clear;
-            bool force;
-            bool commit;
-        } ct;
      };
 
      enum tc_action_type type;
