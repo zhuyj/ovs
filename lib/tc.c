@@ -400,6 +400,22 @@ static const struct nl_policy tca_flower_policy[] = {
     [TCA_FLOWER_KEY_ENC_OPTS] = { .type = NL_A_NESTED, .optional = true, },
     [TCA_FLOWER_KEY_ENC_OPTS_MASK] = { .type = NL_A_NESTED,
                                        .optional = true, },
+    [TCA_FLOWER_KEY_CT_STATE] = { .type = NL_A_U8,
+                                .optional = true, },
+    [TCA_FLOWER_KEY_CT_STATE_MASK] = { .type = NL_A_U8,
+                                .optional = true, },
+    [TCA_FLOWER_KEY_CT_ZONE] = { .type = NL_A_U16,
+                                .optional = true, },
+    [TCA_FLOWER_KEY_CT_ZONE_MASK] = { .type = NL_A_U16,
+                                .optional = true, },
+    [TCA_FLOWER_KEY_CT_MARK] = { .type = NL_A_U32,
+                                .optional = true, },
+    [TCA_FLOWER_KEY_CT_MARK_MASK] = { .type = NL_A_U32,
+                                .optional = true, },
+    [TCA_FLOWER_KEY_CT_LABELS] = { .type = NL_A_U128,
+                                  .optional = true, },
+    [TCA_FLOWER_KEY_CT_LABELS_MASK] = { .type = NL_A_U128,
+                                       .optional = true, },
 };
 
 static void
