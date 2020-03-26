@@ -735,6 +735,7 @@ nl_parse_flower_ct_match(struct nlattr **attrs, struct tc_flower *flower) {
     attr_mask = attrs[TCA_FLOWER_KEY_CT_STATE_MASK];
     if (attr_mask) {
         key->ct_state = nl_attr_get_u8(attr_key);
+        VLOG_ERR("%s: ct_state: %x\n", __func__, key->ct_state);
         mask->ct_state = nl_attr_get_u8(attr_mask);
     }
 
@@ -2596,6 +2597,8 @@ nl_msg_put_flower_options(struct ofpbuf *request, struct tc_flower *flower)
     bool is_qinq = is_vlan && eth_type_vlan(flower->key.encap_eth_type[0]);
     bool is_mpls = eth_type_mpls(flower->key.eth_type);
     int err;
+
+    VLOG_ERR("%s: ct_state: %x\n", __func__, flower->key.ct_state);
 
     /* need to parse acts first as some acts require changing the matching
      * see csum_update_flag()  */

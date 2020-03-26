@@ -621,6 +621,7 @@ parse_tc_flower_to_match(struct tc_flower *flower,
             }
 
             match_set_ct_state_masked(match, ct_statev, ct_statem);
+            VLOG_ERR("%s: ct_state: %x, %x\n", __func__, ct_statev, ct_statem);
         }
 
         match_set_ct_zone_masked(match, key->ct_zone, mask->ct_zone);
