@@ -254,7 +254,7 @@ enum {
 #define TCA_FLOWER_KEY_CT_FLAGS_NEW               0x01 /* Beginning of a new connection. */
 #define TCA_FLOWER_KEY_CT_FLAGS_ESTABLISHED       0x02 /* Part of an existing connection. */
 #define TCA_FLOWER_KEY_CT_FLAGS_INVALID           0x10 /* Could not track connection. */
-#define TCA_FLOWER_KEY_CT_FLAGS_TRACKED           0x20 /* Conntrack has occurred. */
+#define TCA_FLOWER_KEY_CT_FLAGS_TRACKED           0x08 /* Conntrack has occurred. */
 
 enum {
 	TCA_FLOWER_KEY_ENC_OPTS_UNSPEC,
