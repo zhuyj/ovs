@@ -1611,6 +1611,14 @@ dpif_recv_wait(struct dpif *dpif, uint32_t handler_id)
     }
 }
 
+void
+dpif_psample_poll_wait(struct dpif *dpif)
+{
+    if (dpif->dpif_class->psample_poll_wait) {
+        dpif->dpif_class->psample_poll_wait(dpif);
+    }
+}
+
 /*
  * Return the datapath version. Caller is responsible for freeing
  * the string.

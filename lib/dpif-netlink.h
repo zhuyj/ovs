@@ -22,6 +22,7 @@
 #include <stdint.h>
 
 #include "flow.h"
+#include "lib/dpif-provider.h"
 
 struct ofpbuf;
 
@@ -48,6 +49,14 @@ struct dpif_netlink_vport {
     size_t options_len;
 };
 
+struct dpif_netlink_psample {
+    int dp_group_id;            /* mapping id for sflow offload */
+    int iifindex;               /* input ifindex */
+    int group_seq;              /* group sequence */
+    struct nlattr *packet;      /* packet data */
+    struct flow_tnl tunnel;     /* tunnel info */
+};
+
 void dpif_netlink_vport_init(struct dpif_netlink_vport *);
 
 int dpif_netlink_vport_transact(const struct dpif_netlink_vport *request,
@@ -57,6 +66,7 @@ int dpif_netlink_vport_get(const char *name, struct dpif_netlink_vport *reply,
                            struct ofpbuf **bufp);
 
 bool dpif_netlink_is_internal_device(const char *name);
+bool dpif_psample_sock_exist(const struct dpif *);
 
 enum ovs_vport_type netdev_to_ovs_vport_type(const char *type);
 

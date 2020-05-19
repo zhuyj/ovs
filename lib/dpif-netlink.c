@@ -25,6 +25,7 @@
 #include <net/if.h>
 #include <linux/types.h>
 #include <linux/pkt_sched.h>
+#include <linux/psample.h>
 #include <poll.h>
 #include <stdlib.h>
 #include <strings.h>
@@ -207,6 +208,7 @@ struct dpif_netlink {
 
     /* Change notification. */
     struct nl_sock *port_notifier; /* vport multicast group subscriber. */
+    struct nl_sock *psample_sock;
     bool refresh_channels;
 };
 
@@ -224,11 +226,13 @@ static int ovs_flow_family;
 static int ovs_packet_family;
 static int ovs_meter_family;
 static int ovs_ct_limit_family;
+static int psample_family;
 
 /* Generic Netlink multicast groups for OVS.
  *
  * Initialized by dpif_netlink_init(). */
 static unsigned int ovs_vport_mcgroup;
+static unsigned int psample_mcgroup;
 
 /* If true, tunnel devices are created using OVS compat/genetlink.
  * If false, tunnel devices are created with rtnetlink and using light weight
@@ -247,6 +251,8 @@ static void dpif_netlink_vport_to_ofpbuf(const struct dpif_netlink_vport *,
                                          struct ofpbuf *);
 static int dpif_netlink_vport_from_ofpbuf(struct dpif_netlink_vport *,
                                           const struct ofpbuf *);
+static int dpif_netlink_psample_from_ofpbuf(struct dpif_netlink_psample *,
+                                            const struct ofpbuf *);
 static int dpif_netlink_port_query__(const struct dpif_netlink *dpif,
                                      odp_port_t port_no, const char *port_name,
                                      struct dpif_port *dpif_port);
@@ -371,6 +377,38 @@ dpif_netlink_open(const struct dpif_class *class OVS_UNUSED, const char *name,
     return error;
 }
 
+bool dpif_psample_sock_exist(const struct dpif *dpif_)
+{
+    struct dpif_netlink *dpif = dpif_netlink_cast(dpif_);
+
+    return dpif->psample_sock != NULL;
+}
+
+static int open_dpif_psample(struct dpif_netlink *dpif)
+{
+    struct nl_sock *sock;
+    int error;
+
+    dpif->psample_sock = NULL;
+    if (!netdev_is_flow_api_enabled() || !psample_mcgroup) {
+        return 0;
+    }
+
+    error = nl_sock_create(NETLINK_GENERIC, &sock);
+    if (error) {
+        return error;
+    }
+
+    error = nl_sock_join_mcgroup(sock, psample_mcgroup);
+    if (error) {
+        nl_sock_destroy(sock);
+        return error;
+    }
+    dpif->psample_sock = sock;
+
+    return 0;
+}
+
 static int
 open_dpif(const struct dpif_netlink_dp *dp, struct dpif **dpifp)
 {
@@ -378,6 +416,7 @@ open_dpif(const struct dpif_netlink_dp *dp, struct dpif **dpifp)
 
     dpif = xzalloc(sizeof *dpif);
     dpif->port_notifier = NULL;
+    open_dpif_psample(dpif);
     fat_rwlock_init(&dpif->upcall_lock);
 
     dpif_init(&dpif->dpif, &dpif_netlink_class, dp->name,
@@ -615,6 +654,7 @@ dpif_netlink_close(struct dpif *dpif_)
     struct dpif_netlink *dpif = dpif_netlink_cast(dpif_);
 
     nl_sock_destroy(dpif->port_notifier);
+    nl_sock_destroy(dpif->psample_sock);
 
     fat_rwlock_wrlock(&dpif->upcall_lock);
     destroy_all_channels(dpif);
@@ -1295,6 +1335,77 @@ dpif_netlink_port_poll_wait(const struct dpif *dpif_)
 
     if (dpif->port_notifier) {
         nl_sock_wait(dpif->port_notifier, POLLIN);
+    } else {
+        poll_immediate_wake();
+    }
+}
+
+static int parse_psample_packet(struct dpif_netlink_psample *psample,
+                                struct dpif_upcall_psample *dupcall)
+{
+
+    memset(&dupcall->packet, 0, sizeof (struct dp_packet));
+
+    dp_packet_use_stub(&dupcall->packet,
+                       CONST_CAST(struct nlattr *,
+                                  nl_attr_get(psample->packet)) - 1,
+                       nl_attr_get_size(psample->packet) +
+                       sizeof(struct nlattr));
+    dp_packet_set_data(&dupcall->packet,
+                       (char *)dp_packet_data(&dupcall->packet) +
+                       sizeof(struct nlattr));
+    dp_packet_set_size(&dupcall->packet, nl_attr_get_size(psample->packet));
+
+    dupcall->group_id = psample->dp_group_id;
+    dupcall->iifindex = psample->iifindex;
+    dupcall->tunnel = psample->tunnel;
+
+    return 0;
+}
+
+static int
+dpif_netlink_psample_poll(const struct dpif *dpif_,
+                          struct dpif_upcall_psample *dupcall)
+{
+    for (;;) {
+        static struct vlog_rate_limit rl = VLOG_RATE_LIMIT_INIT(1, 5);
+        struct dpif_netlink *dpif = dpif_netlink_cast(dpif_);
+        struct dpif_netlink_psample psample;
+        uint64_t buf_stub[4096 / 8];
+        struct ofpbuf buf;
+        int error;
+
+        ofpbuf_use_stub(&buf, buf_stub, sizeof buf_stub);
+        error = nl_sock_recv(dpif->psample_sock, &buf, NULL, false);
+
+        if (!error) {
+            error = dpif_netlink_psample_from_ofpbuf(&psample, &buf);
+            if (!error) {
+                    ofpbuf_uninit(&buf);
+                    parse_psample_packet(&psample, dupcall);
+                    return 0;
+            }
+        } else if (error != EAGAIN) {
+            VLOG_WARN_RL(&rl, "error reading or parsing netlink (%s)",
+                         ovs_strerror(error));
+            nl_sock_drain(dpif->port_notifier);
+            error = ENOBUFS;
+        }
+
+        ofpbuf_uninit(&buf);
+        if (error) {
+            return error;
+        }
+    }
+}
+
+static void
+dpif_netlink_psample_poll_wait(const struct dpif *dpif_)
+{
+    const struct dpif_netlink *dpif = dpif_netlink_cast(dpif_);
+
+    if (dpif->psample_sock) {
+        nl_sock_wait(dpif->psample_sock, POLLIN);
     } else {
         poll_immediate_wake();
     }
@@ -2097,6 +2208,7 @@ parse_flow_put(struct dpif_netlink *dpif, struct dpif_flow_put *put)
     info.recirc_id_shared_with_tc = (dpif->user_features
                                      & OVS_DP_F_TC_RECIRC_SHARING);
     info.tc_modify_flow_deleted = false;
+    info.info_group_id = put->put_group_id;
     err = netdev_flow_put(dev, &match,
                           CONST_CAST(struct nlattr *, put->actions),
                           put->actions_len,
@@ -4003,6 +4115,8 @@ const struct dpif_class dpif_netlink_class = {
     dpif_netlink_meter_set,
     dpif_netlink_meter_get,
     dpif_netlink_meter_del,
+    dpif_netlink_psample_poll,
+    dpif_netlink_psample_poll_wait,
 };
 
 static int
@@ -4043,6 +4157,18 @@ dpif_netlink_init(void)
             VLOG_INFO("Generic Netlink family '%s' does not exist. "
                       "Please update the Open vSwitch kernel module to enable "
                       "the conntrack limit feature.", OVS_CT_LIMIT_FAMILY);
+        }
+        if (nl_lookup_genl_family(PSAMPLE_GENL_NAME, &psample_family) < 0) {
+            VLOG_INFO("Generic Netlink family '%s' does not exist. "
+                      "Please make sure the kernel module psample is loaded",
+                      PSAMPLE_GENL_NAME);
+        }
+        if (nl_lookup_genl_mcgroup(PSAMPLE_GENL_NAME,
+                                   PSAMPLE_NL_MCGRP_SAMPLE_NAME,
+                                   &psample_mcgroup) < 0) {
+            VLOG_INFO("Failed to join multicast group '%s' for Generic "
+                      "Netlink family '%s'", PSAMPLE_NL_MCGRP_SAMPLE_NAME,
+                      PSAMPLE_GENL_NAME);
         }
 
         ovs_tunnels_out_of_tree = dpif_netlink_rtnl_probe_oot_tunnels();
@@ -4131,6 +4257,99 @@ dpif_netlink_vport_from_ofpbuf(struct dpif_netlink_vport *vport,
     } else {
         netnsid_set_local(&vport->netnsid);
     }
+    return 0;
+}
+
+static int
+parse_psample_tunnel(struct flow_tnl *flow_tnl, const struct nlattr *nl_tun)
+{
+    const struct nlattr *tun_attr;
+    const struct nlattr *tunnel;
+    size_t tun_left, tunnel_len;
+
+    tunnel = nl_attr_get(nl_tun);
+    tunnel_len = nl_attr_get_size(nl_tun);
+
+    NL_ATTR_FOR_EACH_UNSAFE(tun_attr, tun_left, tunnel, tunnel_len) {
+        switch (nl_attr_type(tun_attr)) {
+        case PSAMPLE_TUNNEL_KEY_ATTR_ID: {
+            flow_tnl->tun_id = nl_attr_get_be64(tun_attr);
+        }
+        break;
+        case PSAMPLE_TUNNEL_KEY_ATTR_IPV4_SRC: {
+            flow_tnl->ip_src = nl_attr_get_be32(tun_attr);
+        }
+        break;
+        case PSAMPLE_TUNNEL_KEY_ATTR_IPV4_DST: {
+            flow_tnl->ip_dst = nl_attr_get_be32(tun_attr);
+        }
+        break;
+        case PSAMPLE_TUNNEL_KEY_ATTR_TOS: {
+            flow_tnl->ip_tos = nl_attr_get_u8(tun_attr);
+        }
+        break;
+        case PSAMPLE_TUNNEL_KEY_ATTR_TTL: {
+            flow_tnl->ip_ttl = nl_attr_get_u8(tun_attr);
+        }
+        break;
+        case PSAMPLE_TUNNEL_KEY_ATTR_IPV6_SRC: {
+            flow_tnl->ipv6_src = nl_attr_get_in6_addr(tun_attr);
+        }
+        break;
+        case PSAMPLE_TUNNEL_KEY_ATTR_IPV6_DST: {
+            flow_tnl->ipv6_dst = nl_attr_get_in6_addr(tun_attr);
+        }
+        break;
+        case PSAMPLE_TUNNEL_KEY_ATTR_TP_SRC: {
+            flow_tnl->tp_src = nl_attr_get_be16(tun_attr);
+        }
+        break;
+        case PSAMPLE_TUNNEL_KEY_ATTR_TP_DST: {
+            flow_tnl->tp_dst = nl_attr_get_be16(tun_attr);
+        }
+        break;
+        }
+    }
+
+    return 0;
+}
+
+static int
+dpif_netlink_psample_from_ofpbuf(struct dpif_netlink_psample *psample,
+                                 const struct ofpbuf *buf)
+{
+    static const struct nl_policy ovs_psample_policy[] = {
+        [PSAMPLE_ATTR_IIFINDEX] = { .type = NL_A_U16 },
+        [PSAMPLE_ATTR_SAMPLE_GROUP] = { .type = NL_A_U32 },
+        [PSAMPLE_ATTR_GROUP_SEQ] = { .type = NL_A_U32 },
+        [PSAMPLE_ATTR_DATA] = { .type = NL_A_UNSPEC },
+        [PSAMPLE_ATTR_TUNNEL] = { .type = NL_A_NESTED, .optional = true },
+    };
+
+    struct ofpbuf b = ofpbuf_const_initializer(buf->data, buf->size);
+    struct nlmsghdr *nlmsg = ofpbuf_try_pull(&b, sizeof *nlmsg);
+    struct genlmsghdr *genl = ofpbuf_try_pull(&b, sizeof *genl);
+    const struct nlattr *nl_tun;
+
+    struct nlattr *a[ARRAY_SIZE(ovs_psample_policy)];
+    if (!nlmsg || !genl || nlmsg->nlmsg_type != psample_family
+        || !nl_policy_parse(&b, 0, ovs_psample_policy, a,
+                            ARRAY_SIZE(ovs_psample_policy))) {
+        return EINVAL;
+    }
+
+    memset(psample, 0, sizeof *psample);
+
+    psample->iifindex = nl_attr_get_u16(a[PSAMPLE_ATTR_IIFINDEX]);
+    psample->dp_group_id = nl_attr_get_u32(a[PSAMPLE_ATTR_SAMPLE_GROUP]);
+    psample->group_seq = nl_attr_get_u16(a[PSAMPLE_ATTR_GROUP_SEQ]);
+    psample->packet = a[PSAMPLE_ATTR_DATA];
+
+    nl_tun = a[PSAMPLE_ATTR_TUNNEL];
+    if (nl_tun) {
+        parse_psample_tunnel(&psample->tunnel, nl_tun);
+    }
+
     return 0;
 }
 

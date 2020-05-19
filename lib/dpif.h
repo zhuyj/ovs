@@ -666,6 +666,7 @@ struct dpif_flow_put {
     size_t actions_len;             /* Length of 'actions' in bytes. */
     const ovs_u128 *ufid;           /* Optional unique flow identifier. */
     unsigned pmd_id;                /* Datapath poll mode driver id. */
+    uint32_t put_group_id;          /* mapping id for sflow offload */
 
     /* Output. */
     struct dpif_flow_stats *stats;  /* Optional flow statistics. */
@@ -825,6 +826,13 @@ struct dpif_upcall {
     struct nlattr *actions;    /* Argument to OVS_ACTION_ATTR_USERSPACE. */
 };
 
+struct dpif_upcall_psample {
+    struct dp_packet packet;    /* packet data */
+    struct flow_tnl tunnel;     /* tunnel info */
+    uint32_t iifindex;          /* input ifindex */
+    uint32_t group_id;          /* mapping id for sflow offload */
+};
+
 /* A callback to notify higher layer of dpif about to be purged, so that
  * higher layer could try reacting to this (e.g. grabbing all flow stats
  * before they are gone).  This function is currently implemented only by
@@ -877,6 +885,7 @@ int dpif_recv(struct dpif *, uint32_t handler_id, struct dpif_upcall *,
               struct ofpbuf *);
 void dpif_recv_purge(struct dpif *);
 void dpif_recv_wait(struct dpif *, uint32_t handler_id);
+void dpif_psample_poll_wait(struct dpif *);
 void dpif_enable_upcall(struct dpif *);
 void dpif_disable_upcall(struct dpif *);
 

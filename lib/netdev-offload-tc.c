@@ -39,6 +39,7 @@
 #include "unaligned.h"
 #include "util.h"
 #include "dpif-provider.h"
+#include "dpif-gid.h"
 
 VLOG_DEFINE_THIS_MODULE(netdev_offload_tc);
 
@@ -662,6 +663,37 @@ parse_tc_flower_to_match(struct tc_flower *flower,
         action = flower->actions;
         for (i = 0; i < flower->action_count; i++, action++) {
             switch (action->type) {
+            case TC_ACT_SAMPLE: {
+                const struct group_id_node *node;
+                size_t sample_offset;
+                size_t action_offset;
+                size_t userspace_offset;
+
+                sample_offset =
+                    nl_msg_start_nested(buf, OVS_ACTION_ATTR_SAMPLE);
+                nl_msg_put_u32(buf, OVS_SAMPLE_ATTR_PROBABILITY,
+                               UINT32_MAX / action->sample.action_rate);
+                action_offset =
+                    nl_msg_start_nested(buf, OVS_SAMPLE_ATTR_ACTIONS);
+                userspace_offset =
+                    nl_msg_start_nested(buf, OVS_ACTION_ATTR_USERSPACE);
+                node = group_id_node_find(action->sample.action_group_id);
+                if (node) {
+                    nl_msg_put_be32(buf, OVS_USERSPACE_ATTR_PID,
+                                    node->action.pid);
+                    nl_msg_put_unspec(buf, OVS_USERSPACE_ATTR_USERDATA,
+                                      &node->action.cookie,
+                                      sizeof (struct user_action_cookie));
+                } else {
+                    VLOG_ERR_RL(&error_rl, "failed to get group_id %d node",
+                                action->sample.action_group_id);
+                }
+                nl_msg_put_flag(buf, OVS_USERSPACE_ATTR_ACTIONS);
+                nl_msg_end_nested(buf, userspace_offset);
+                nl_msg_end_nested(buf, action_offset);
+                nl_msg_end_nested(buf, sample_offset);
+            }
+            break;
             case TC_ACT_VLAN_POP: {
                 nl_msg_put_flag(buf, OVS_ACTION_ATTR_POP_VLAN);
             }
@@ -1712,6 +1744,13 @@ netdev_tc_flow_put(struct netdev *netdev, struct match *match,
             action->chain = nl_attr_get_u32(nla);
             flower.action_count++;
             recirc_act = true;
+        } else if (nl_attr_type(nla) == OVS_ACTION_ATTR_SAMPLE) {
+            const struct nlattr *sample = nl_attr_get(nla);
+
+            action->type = TC_ACT_SAMPLE;
+            action->sample.action_rate = UINT32_MAX / nl_attr_get_u32(sample);
+            action->sample.action_group_id = info->info_group_id;
+            flower.action_count++;
         } else {
             VLOG_DBG_RL(&rl, "unsupported put action type: %d",
                         nl_attr_type(nla));

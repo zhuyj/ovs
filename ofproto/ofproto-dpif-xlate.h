@@ -22,6 +22,7 @@
 #include "openvswitch/ofpbuf.h"
 #include "ofproto-dpif-mirror.h"
 #include "ofproto-dpif-rid.h"
+#include "lib/dpif-gid.h"
 #include "ofproto-dpif.h"
 #include "ofproto.h"
 #include "stp.h"
@@ -61,6 +62,7 @@ struct xlate_out {
 
     /* Recirc action IDs on which references are held. */
     struct recirc_refs recircs;
+    uint32_t xout_group_id;
 };
 
 struct xlate_in {

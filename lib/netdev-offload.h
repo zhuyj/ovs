@@ -77,6 +77,7 @@ struct offload_info {
 
     bool tc_modify_flow_deleted; /* Indicate the tc modify flow put success
                                   * to delete the original flow. */
+    uint32_t info_group_id;      /* mapping id for sflow offload */
 };
 
 int netdev_flow_flush(struct netdev *);

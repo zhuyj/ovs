@@ -66,6 +66,9 @@
 #include "tunnel.h"
 #include "util.h"
 #include "uuid.h"
+#include "lib/netdev-provider.h"
+#include "lib/dpif-netlink.h"
+#include "lib/dpif-gid.h"
 
 COVERAGE_DEFINE(xlate_actions);
 COVERAGE_DEFINE(xlate_actions_oversize);
@@ -3345,6 +3348,27 @@ fix_sflow_action(struct xlate_ctx *ctx, unsigned int user_cookie_offset)
         /* 0x80000000 means "multiple output ports. */
         cookie->sflow.output = 0x80000000 | ctx->sflow_n_outputs;
         break;
+    }
+
+    if (dpif_psample_sock_exist(ctx->xin->ofproto->backer->dpif)) {
+        struct userspace_action action;
+        odp_port_t odp_port;
+        uint32_t pid;
+        uint32_t rate;
+
+        odp_port = ofp_port_to_odp_port(ctx->xbridge,
+                                        ctx->xin->flow.in_port.ofp_port);
+        pid = dpif_port_get_pid(ctx->xbridge->dpif, odp_port);
+        rate = UINT32_MAX / dpif_sflow_get_probability(ctx->xbridge->sflow);
+
+        action.cookie = *cookie;
+        action.rate = rate;
+        action.pid = pid;
+
+        ctx->xout->xout_group_id = group_alloc_id_ctx(&action);
+        VLOG_DBG("%s: group_id: %d, output: 0x%x, rate: %d, pid: 0x%x",
+            __func__, ctx->xout->xout_group_id, cookie->sflow.output,
+            rate, pid);
     }
 }
 
@@ -7424,6 +7448,7 @@ xlate_actions(struct xlate_in *xin, struct xlate_out *xout)
     *xout = (struct xlate_out) {
         .slow = 0,
         .recircs = RECIRC_REFS_EMPTY_INITIALIZER,
+        .xout_group_id = 0,
     };
 
     struct xlate_cfg *xcfg = ovsrcu_get(struct xlate_cfg *, &xcfgp);

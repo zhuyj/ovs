@@ -1772,6 +1772,7 @@ destruct(struct ofproto *ofproto_, bool del)
     guarded_list_destroy(&ofproto->ams);
 
     recirc_free_ofproto(ofproto, ofproto->up.name);
+    group_free_ofproto(ofproto, ofproto->up.name);
 
     mbridge_unref(ofproto->mbridge);
 
