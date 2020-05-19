@@ -79,6 +79,8 @@ lib_libopenvswitch_la_SOURCES = \
 	lib/dp-packet.h \
 	lib/dp-packet.c \
 	lib/dpdk.h \
+	lib/dpif-gid.c \
+	lib/dpif-gid.h \
 	lib/dpif-netdev-lookup-generic.c \
 	lib/dpif-netdev.c \
 	lib/dpif-netdev.h \
