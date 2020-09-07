@@ -30,6 +30,9 @@ done
 insert_mods () {
     # Try loading openvswitch kernel module.
     action "Inserting openvswitch module" modprobe openvswitch
+
+    # Try loading psample kernel module.
+    action "Inserting psample module" modprobe psample
 }
 
 insert_kmods_if_required() {
@@ -94,6 +97,12 @@ remove_kmods() {
     fi
     if test -e /sys/module/vxlan; then
         action "Forcing removal of vxlan module" rmmod vxlan
+    fi
+    if test -e /sys/module/act_sample; then
+        action "Forcing removal of act_sample module" rmmod act_sample
+    fi
+    if test -e /sys/module/psample; then
+        action "Forcing removal of psample module" rmmod psample
     fi
 }
 
