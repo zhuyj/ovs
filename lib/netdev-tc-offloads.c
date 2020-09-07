@@ -174,8 +174,9 @@ del_filter_and_ufid_mapping(int ifindex, uint32_t chain, int prio, int handle,
     int err;
 
     err = tc_del_filter(ifindex, chain, prio, handle, block_id);
-    del_ufid_tc_mapping(ufid);
-
+    if (!err) {
+        del_ufid_tc_mapping(ufid);
+    }
     return err;
 }
 
