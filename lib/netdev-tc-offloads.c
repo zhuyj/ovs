@@ -174,8 +174,9 @@ del_filter_and_ufid_mapping(int ifindex, uint32_t chain, int prio, int handle,
     int err;
 
     err = tc_del_filter(ifindex, chain, prio, handle, block_id);
-    del_ufid_tc_mapping(ufid);
-
+    if (!err) {
+        del_ufid_tc_mapping(ufid);
+    }
     return err;
 }
 
@@ -1641,6 +1642,7 @@ out:
 static void
 probe_tc_block_support(int ifindex)
 {
+    struct tc_flower flower;
     uint32_t block_id = 1;
     int error;
 
@@ -1649,10 +1651,21 @@ probe_tc_block_support(int ifindex)
         return;
     }
 
+    memset(&flower, 0, sizeof flower);
+
+    flower.key.eth_type = htons(ETH_P_IP);
+    flower.mask.eth_type = OVS_BE16_MAX;
+    memset(&flower.key.dst_mac, 0x11, sizeof flower.key.dst_mac);
+    memset(&flower.mask.dst_mac, 0xff, sizeof flower.mask.dst_mac);
+
+    error = tc_replace_flower(ifindex, 0, 1, 1, &flower, block_id);
+
     tc_add_del_ingress_qdisc(ifindex, false, block_id);
 
-    block_support = true;
-    VLOG_INFO("probe tc: block offload is supported.");
+    if (!error) {
+        block_support = true;
+        VLOG_INFO("probe tc: block offload is supported.");
+    }
 }
 
 int
