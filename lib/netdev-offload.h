@@ -124,6 +124,7 @@ int netdev_ports_flow_get(const char *dpif_type, struct match *match,
                           struct dpif_flow_stats *stats,
                           struct dpif_flow_attrs *attrs,
                           struct ofpbuf *buf);
+const struct dpif_sflow_attr *netdev_sflow_attr_get(struct netdev *, uint32_t);
 
 #ifdef  __cplusplus
 }
