@@ -1531,9 +1531,9 @@ netdev_tc_flow_get(struct netdev *netdev OVS_UNUSED,
         return -ifindex;
     }
 
-    VLOG_DBG_RL(&rl, "flow get (dev %s chain %d prio %d handle %d)",
-                netdev_get_name(dev), chain, prio, handle);
-    block_id = get_block_id_from_netdev(netdev);
+    block_id = get_block_id_from_netdev(dev);
+    VLOG_DBG_RL(&rl, "flow get (dev %s chain %d prio %d handle %d block_id %d)",
+                netdev_get_name(dev), chain, prio, handle, block_id);
     err = tc_get_flower(ifindex, chain, prio, handle, &flower, block_id);
     netdev_close(dev);
     if (err) {
@@ -1578,7 +1578,7 @@ netdev_tc_flow_del(struct netdev *netdev OVS_UNUSED,
         return -ifindex;
     }
 
-    block_id = get_block_id_from_netdev(netdev);
+    block_id = get_block_id_from_netdev(dev);
 
     if (stats) {
         memset(stats, 0, sizeof *stats);
