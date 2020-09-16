@@ -7,4 +7,5 @@ noinst_HEADERS += \
 	include/linux/tc_act/tc_skbedit.h \
 	include/linux/tc_act/tc_tunnel_key.h \
 	include/linux/tc_act/tc_vlan.h \
-	include/linux/tc_act/tc_ct.h
+	include/linux/tc_act/tc_ct.h \
+	include/linux/psample.h
